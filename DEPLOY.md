@@ -8,6 +8,11 @@
 
 ## First-time setup on the VPS
 ```bash
+# 0. System Chromium for the PDF voucher (Puppeteer uses this — we skip its own download).
+#    Installs all the shared libs Chromium needs as dependencies.
+apt-get update && apt-get install -y chromium-browser || apt-get install -y chromium
+which chromium-browser || which chromium      # note the path for PUPPETEER_EXECUTABLE_PATH
+
 # 1. Clone
 git clone https://github.com/PresswalaEngineer/gbt-backend.git
 cd gbt-backend
@@ -19,6 +24,10 @@ nano .env
 SEED=1 bash deploy.sh
 ```
 
+> **Puppeteer note:** `deploy.sh` exports `PUPPETEER_SKIP_DOWNLOAD=true`, so npm never tries to
+> download Chromium. The app launches the **system** Chromium via `PUPPETEER_EXECUTABLE_PATH`
+> (set in `.env`). Already runs with `--no-sandbox` (required as root).
+
 ## UAT `.env` overrides (everything else stays the same as your current .env)
 ```
 NODE_ENV=production              # use 'development' if the host is plain HTTP (secure cookies need HTTPS)
@@ -28,6 +37,8 @@ PUBLIC_BASE_URL=https://uat-gbt-be.thehashtagindiacorp.com
 STOREFRONT_URL=https://uat-gbt-be.thehashtagindiacorp.com
 CORS_ORIGINS=*
 DATABASE_URL=postgresql://global_bus_tour_uat:Test%40123@uat-gbt-be.thehashtagindiacorp.com:5432/global_bus_tour_uat
+PUPPETEER_SKIP_DOWNLOAD=true
+PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser   # or /usr/bin/chromium — whatever `which` returned
 ```
 
 ## Day-to-day

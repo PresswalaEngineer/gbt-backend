@@ -15,6 +15,9 @@ async function getBrowser() {
     }
     browserPromise = puppeteer.launch({
         headless: true,
+        // Use a system-installed Chromium when set (servers skip Puppeteer's own
+        // browser download); falls back to the bundled browser locally.
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
     });
     return browserPromise;

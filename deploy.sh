@@ -11,6 +11,9 @@ git fetch origin "$BRANCH"
 git reset --hard "origin/$BRANCH"
 
 echo "▶ [2/6] Installing dependencies…"
+# Skip Puppeteer's Chromium download — the server uses system Chromium
+# (PUPPETEER_EXECUTABLE_PATH in .env). Avoids the unzip/extract failure.
+export PUPPETEER_SKIP_DOWNLOAD=true
 if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 echo "▶ [3/6] Generating Prisma client…"

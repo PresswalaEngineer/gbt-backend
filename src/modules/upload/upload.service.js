@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import jwt from 'jsonwebtoken';
+import sharp from 'sharp';
 import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '../../config/env.js';
@@ -12,6 +13,7 @@ import {
     LOCAL_PUBLIC_BASE_URL,
     LOCAL_UPLOAD_DIR,
 } from '../../services/storage/local-client.js';
+import { IMAGE_PRESETS, DEFAULT_IMAGE_PRESET } from './image-presets.js';
 
 const SAFE_NAME_RE = /[^a-z0-9-_.]+/gi;
 const LOCAL_TOKEN_AUDIENCE = 'upload:local';
@@ -99,6 +101,73 @@ export async function buildPresignedUpload({ filename, contentType, size, folder
         return buildR2Upload({ key, contentType, size });
     }
     return buildLocalUpload({ key, contentType, size });
+}
+
+// Server-side object write (used after sharp processing). Returns the public URL.
+async function putObject({ key, body, contentType }) {
+    if (env.STORAGE_DRIVER === 'r2') {
+        await getR2Client().send(
+            new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, Body: body, ContentType: contentType })
+        );
+        return `${R2_PUBLIC_BASE_URL}/${key}`;
+    }
+    const safeKey = path.normalize(key).replace(/^([./\\])+/, '');
+    const targetPath = path.join(LOCAL_UPLOAD_DIR, safeKey);
+    if (!targetPath.startsWith(LOCAL_UPLOAD_DIR)) {
+        throw ApiError.badRequest('Invalid storage key', { code: 'UPLOAD_KEY_INVALID' });
+    }
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    await fs.writeFile(targetPath, body);
+    return `${LOCAL_PUBLIC_BASE_URL}/${key}`;
+}
+
+// Accept ANY raster image, resize to the field's preset, output WebP, store it.
+// The admin no longer enforces format/dimensions — we normalise here.
+export async function processAndStoreImage({ buffer, folder, preset }) {
+    if (!buffer || !buffer.length) {
+        throw ApiError.badRequest('Empty image upload', { code: 'UPLOAD_EMPTY' });
+    }
+    if (buffer.length > env.UPLOAD_MAX_SIZE_BYTES) {
+        throw ApiError.badRequest('File exceeds the maximum allowed size', {
+            code: 'FILE_TOO_LARGE',
+            details: { maxBytes: env.UPLOAD_MAX_SIZE_BYTES },
+        });
+    }
+
+    let meta;
+    try {
+        meta = await sharp(buffer).metadata();
+    } catch {
+        meta = null;
+    }
+    if (!meta || !meta.format) {
+        throw ApiError.badRequest('Unsupported or corrupt image file', { code: 'INVALID_IMAGE' });
+    }
+
+    const cfg = IMAGE_PRESETS[preset] || DEFAULT_IMAGE_PRESET;
+    const fit = cfg.fit || 'cover';
+
+    let out;
+    try {
+        out = await sharp(buffer, { failOn: 'none' })
+            .rotate() // honour EXIF orientation
+            .resize({
+                width: cfg.width,
+                height: cfg.height,
+                fit,
+                position: 'attention', // smart crop toward the salient region
+                withoutEnlargement: fit === 'inside',
+            })
+            .webp({ quality: 82 })
+            .toBuffer();
+    } catch (err) {
+        logger.warn({ err: err?.message, preset }, 'image processing failed');
+        throw ApiError.badRequest('Could not process this image', { code: 'IMAGE_PROCESS_FAILED' });
+    }
+
+    const key = buildKey({ folder, filename: 'image.webp' });
+    const url = await putObject({ key, body: out, contentType: 'image/webp' });
+    return { url, key, width: cfg.width ?? meta.width, height: cfg.height ?? meta.height, bytes: out.length };
 }
 
 function resolveKeyFromUrl(url) {

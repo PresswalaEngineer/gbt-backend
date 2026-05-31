@@ -11,6 +11,13 @@ export async function cleanup(req, res) {
     return success(res, result, { message: 'Cleanup complete' });
 }
 
+export async function uploadImage(req, res) {
+    const folder = typeof req.query.folder === 'string' ? req.query.folder : undefined;
+    const preset = typeof req.query.preset === 'string' ? req.query.preset : undefined;
+    const result = await uploadService.processAndStoreImage({ buffer: req.body, folder, preset });
+    return success(res, result, { message: 'Image processed and stored' });
+}
+
 export async function localPut(req, res) {
     const token = typeof req.query.token === 'string' ? req.query.token : '';
     const result = await uploadService.persistLocalUpload({

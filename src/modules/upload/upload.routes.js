@@ -4,7 +4,7 @@ import { asyncHandler } from '../../utils/async-handler.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { env } from '../../config/env.js';
-import { cleanupSchema, presignSchema } from './upload.validation.js';
+import { cleanupSchema, presignSchema, imageUploadQuerySchema } from './upload.validation.js';
 import * as uploadController from './upload.controller.js';
 
 const uploadLimiter = rateLimit({
@@ -40,6 +40,15 @@ router.post(
     uploadLimiter,
     validate({ body: cleanupSchema }),
     asyncHandler(uploadController.cleanup)
+);
+
+// Image upload that resizes/normalises server-side (raw image bytes in body).
+router.post(
+    '/image',
+    uploadLimiter,
+    express.raw({ type: () => true, limit: env.UPLOAD_MAX_SIZE_BYTES }),
+    validate({ query: imageUploadQuerySchema }),
+    asyncHandler(uploadController.uploadImage)
 );
 
 export default router;

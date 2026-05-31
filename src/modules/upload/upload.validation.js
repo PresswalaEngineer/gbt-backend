@@ -14,6 +14,18 @@ export const presignSchema = z
     })
     .strict();
 
+export const imageUploadQuerySchema = z
+    .object({
+        folder: z
+            .string()
+            .trim()
+            .max(60)
+            .regex(/^[a-z0-9-]+$/i, 'Folder must be alphanumeric or hyphenated')
+            .optional(),
+        preset: z.string().trim().max(40).optional(),
+    })
+    .strict();
+
 export const cleanupSchema = z
     .object({
         urls: z

@@ -9,6 +9,8 @@ const VOUCHER_INCLUDE = {
             id: true,
             name: true,
             description: true,
+            highlights: true,
+            itinerary: true,
             duration: true,
             meetingPoint: true,
             meetingPoints: true,

@@ -311,6 +311,8 @@ model Tour {
   supplierName String?
 
   description        String?
+  highlights         String?
+  itinerary          String?
   inclusions         String?
   exclusions         String?
   cancellationPolicy String?

@@ -105,6 +105,7 @@ export function buildVoucherHtml(b, qrDataUrl = '') {
     const tour = b.tour || {};
     const paid = b.paymentStatus === 'PAID' || b.status === 'CONFIRMED';
     const statusLabel = b.status === 'CONFIRMED' || paid ? 'CONFIRMED' : 'PENDING CONFIRMATION';
+    const highlights = listItems(tour.highlights, 4);
     const inc = listItems(tour.inclusions, 6);
     const exc = listItems(tour.exclusions, 6);
     const notes = listItems(tour.importantNotes, 4);
@@ -177,6 +178,9 @@ export function buildVoucherHtml(b, qrDataUrl = '') {
   .stops li:not(:last-child)::before{content:"";position:absolute;left:4px;top:13px;bottom:-3px;width:1px;background:#e5d2d6}
   .stops .sl{display:block;font-size:9px;letter-spacing:.5px;text-transform:uppercase;color:#9aa0aa}
   .stops .sv{display:block;font-size:12.5px;font-weight:600;color:#374151}
+  .stops ul.hl{list-style:none}
+  .stops ul.hl li{display:flex;gap:7px;align-items:flex-start;font-size:12px;color:#374151;padding:2px 0;line-height:1.3}
+  .stops ul.hl li svg{margin-top:2px;flex-shrink:0}
   .help{margin-top:14px;background:#fafbfc;border:1px solid #eef0f3;border-radius:9px;padding:11px 14px}
   .help .kh{display:flex;align-items:center;gap:5px;font-weight:700;color:#1f2430;font-size:11.5px;margin-bottom:7px}
   .help .kh svg{color:#c8102e}
@@ -234,6 +238,11 @@ export function buildVoucherHtml(b, qrDataUrl = '') {
     ${stops.length ? `<div class="stops">
       <div class="sh">${ICON.route}<span>Route &amp; stops</span></div>
       <ol>${stops.map((s) => `<li><span class="dot"></span><div><span class="sl">${esc(s.label)}</span><span class="sv">${esc(s.value)}</span></div></li>`).join('')}</ol>
+    </div>` : ''}
+
+    ${highlights.length ? `<div class="stops">
+      <div class="sh">${ICON.info}<span>Tour highlights</span></div>
+      <ul class="hl">${highlights.map((h) => `<li>${ICON.check}<span>${esc(h)}</span></li>`).join('')}</ul>
     </div>` : ''}
 
     ${inc.length || exc.length ? `<div class="cols">

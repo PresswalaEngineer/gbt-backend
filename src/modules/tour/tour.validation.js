@@ -117,6 +117,8 @@ const baseFields = {
     supplierName: optionalString,
 
     description: optionalString,
+    highlights: optionalString,
+    itinerary: optionalString,
     inclusions: optionalString,
     exclusions: optionalString,
     cancellationPolicy: optionalString,

@@ -103,10 +103,11 @@ export async function voucherHtml(req, res) {
     ensureVoucherReady(b);
     const html = await buildHtmlForBooking(b);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    // Allow the storefront to embed this voucher in an <iframe> (helmet defaults
-    // to X-Frame-Options: SAMEORIGIN, which would block the cross-port frame).
+    // This voucher is a public, token-gated, read-only document — allow it to be
+    // embedded in an <iframe> from anywhere (storefront, admin, any UAT/prod host).
+    // helmet defaults to X-Frame-Options: SAMEORIGIN which would block the frame.
     res.removeHeader('X-Frame-Options');
-    res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${env.STOREFRONT_URL}`);
+    res.setHeader('Content-Security-Policy', 'frame-ancestors *');
     return res.send(html);
 }
 

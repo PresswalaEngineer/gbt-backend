@@ -16,17 +16,17 @@ const esc = (s) =>
 
 // Minimal inline SVG icon set (16px, inherits color via currentColor).
 const ICON = {
-    calendar: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
-    clock: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
-    users: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13A4 4 0 0 1 16 11"/></svg>',
-    ticket: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 9a3 3 0 0 0 0 6v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/></svg>',
-    pin: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+    calendar: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    users: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13A4 4 0 0 1 16 11"/></svg>',
+    ticket: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9a3 3 0 0 0 0 6v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/></svg>',
+    pin: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
     check: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#16a34a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
     cross: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#9ca3af" stroke-width="3" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
-    info: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>',
-    card: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>',
-    help: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></svg>',
-    route: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="M9 19h6a4 4 0 0 0 0-8H9a4 4 0 0 1 0-8h0"/></svg>',
+    info: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>',
+    card: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>',
+    help: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></svg>',
+    route: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="M9 19h6a4 4 0 0 0 0-8H9a4 4 0 0 1 0-8h0"/></svg>',
 };
 
 function longDate(d) {
@@ -122,18 +122,19 @@ export function buildVoucherHtml(b, qrDataUrl = '') {
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Voucher ${esc(b.referenceNumber)}</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{background:#eef0f4}
-  body{font-family:'Segoe UI',Helvetica,Arial,sans-serif;color:#1f2430;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-size:13px}
+  body{font-family:'Inter','Segoe UI',Helvetica,Arial,sans-serif;color:#23272f;-webkit-print-color-adjust:exact;print-color-adjust:exact;font-size:13px;-webkit-font-smoothing:antialiased}
   .sheet{max-width:820px;margin:18px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.07)}
   .hdr{background:#c8102e;color:#fff;padding:16px 22px;display:flex;justify-content:space-between;align-items:center;gap:14px}
   .brand{display:flex;align-items:center;gap:11px}
-  .brand .logo{width:40px;height:40px;border-radius:9px;background:#fff;color:#c8102e;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px}
+  .brand .logo{width:40px;height:40px;border-radius:9px;background:#fff;color:#c8102e;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px}
   .brand h1{font-size:17px;letter-spacing:.4px;line-height:1.1}
   .brand p{font-size:9.5px;opacity:.85;letter-spacing:1.6px;margin-top:2px}
   .hdr .right{text-align:right}
   .hdr .right .lbl{font-size:9px;letter-spacing:1.6px;opacity:.85}
-  .hdr .right .ref{font-size:16px;font-weight:800;margin-top:1px}
+  .hdr .right .ref{font-size:16px;font-weight:700;margin-top:1px}
   .hdr .right .issued{font-size:10px;opacity:.85;margin-top:4px}
   .stripe{height:5px;background:repeating-linear-gradient(90deg,#f4b400 0 13px,#1f2430 13px 26px)}
   .body{padding:18px 22px}
@@ -141,7 +142,7 @@ export function buildVoucherHtml(b, qrDataUrl = '') {
   .badge{font-size:10px;font-weight:700;padding:4px 9px;border-radius:5px;letter-spacing:.4px}
   .badge.green{background:#eafaf0;color:#16a34a;border:1px solid #c7eed6}
   .badge.dark{background:#1f2430;color:#fff}
-  .title{font-size:21px;font-weight:800;line-height:1.2;margin-bottom:3px}
+  .title{font-size:21px;font-weight:700;line-height:1.2;margin-bottom:3px}
   .subtitle{color:#6b7280;font-size:12px;margin-bottom:14px}
   .top{display:flex;gap:18px;align-items:center}
   .grid{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:11px 14px}
@@ -167,7 +168,7 @@ export function buildVoucherHtml(b, qrDataUrl = '') {
   .know .kh{display:flex;align-items:center;gap:5px;font-weight:700;color:#1f2430;margin-bottom:4px;font-size:11.5px}
   .totals{width:250px;flex-shrink:0;background:#fafbfc;border:1px solid #eef0f3;border-radius:9px;padding:11px 13px}
   .totals .row{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:#4b5563}
-  .totals .row.total{border-top:1px solid #e5e7eb;margin-top:5px;padding-top:7px;font-size:15px;font-weight:800;color:#1f2430}
+  .totals .row.total{border-top:1px solid #e5e7eb;margin-top:5px;padding-top:7px;font-size:15px;font-weight:700;color:#1f2430}
   .totals .prow{margin-top:7px;padding-top:7px;border-top:1px dashed #e5e7eb;font-size:11px;color:#6b7280;text-align:right}
   .stops{margin-top:14px;border:1px solid #eef0f3;border-radius:9px;padding:11px 14px}
   .stops .sh{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#1f2430;margin-bottom:8px}

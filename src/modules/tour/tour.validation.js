@@ -139,6 +139,17 @@ const baseFields = {
         .transform((value) =>
             value === '' || value === null || value === undefined ? null : Number(value)
         ),
+    maxBookingDays: z
+        .union([z.coerce.number().int().min(1).max(3650), z.literal(''), z.null()])
+        .optional()
+        .transform((value) =>
+            value === '' || value === null || value === undefined ? null : Number(value)
+        ),
+    unavailableDates: z
+        .array(z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Dates must be YYYY-MM-DD'))
+        .max(366, 'Too many blackout dates')
+        .optional()
+        .default([]),
     freeCancellationHours: z
         .union([z.coerce.number().int().min(0).max(8760), z.literal(''), z.null()])
         .optional()

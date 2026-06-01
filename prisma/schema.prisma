@@ -328,6 +328,7 @@ model Tour {
   meetingPoints         String[]         @default([])
   bookingWindow         String?
   bookingCutoffHours    Int?
+  maxBookingDays        Int?
   freeCancellationHours Int?
 
   routeMapUrl          String?

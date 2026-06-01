@@ -173,7 +173,7 @@ export async function getAvailability({ id, date, pax }) {
     const tour = await prisma.tour.findUnique({
         where: { id },
         select: {
-            id: true, status: true, bookingCutoffHours: true, minPax: true, maxPax: true,
+            id: true, status: true, bookingCutoffHours: true, maxBookingDays: true, minPax: true, maxPax: true,
             startTimes: true, unavailableDates: true, apiType: true, apiId: true,
             dailyCapacity: true,
             supplier: { select: { apiChannelId: true, apiKey: true } },
@@ -189,17 +189,23 @@ export async function getAvailability({ id, date, pax }) {
     // Earliest bookable calendar date = now + cutoff lead time.
     const earliest = new Date(Date.now() + cutoff * 3600 * 1000);
     const earliestDate = earliest.toISOString().slice(0, 10);
+    // Latest bookable date = today + maxBookingDays (if set); else open-ended.
+    const latestDate = tour.maxBookingDays
+        ? new Date(Date.now() + tour.maxBookingDays * 86400000).toISOString().slice(0, 10)
+        : null;
 
     const activeOk = tour.status === 'ACTIVE';
     const paxOk = !pax || (pax >= minPax && pax <= maxPax);
     const cutoffOk = !date || date >= earliestDate;
+    const withinMax = !date || !latestDate || date <= latestDate;
     const blackedOut = !!date && blackout.has(date);
-    let available = activeOk && paxOk && cutoffOk && !blackedOut;
+    let available = activeOk && paxOk && cutoffOk && withinMax && !blackedOut;
 
     let reason = null;
     if (!activeOk) reason = 'This experience is not currently bookable.';
     else if (!paxOk) reason = `This experience accepts ${minPax}–${maxPax} travellers.`;
     else if (blackedOut) reason = 'This date is fully booked — please choose another date.';
+    else if (!withinMax) reason = 'This date is too far ahead — please choose an earlier date.';
     else if (!cutoffOk)
         reason = cutoff > 0
             ? `Bookings need at least ${cutoff}h notice, so this date is no longer available.`
@@ -246,7 +252,7 @@ export async function getAvailability({ id, date, pax }) {
         }
     }
 
-    return { available, reason, requestedDate: date ?? null, earliestDate, nextDates, remaining, startTimes: tour.startTimes ?? [] };
+    return { available, reason, requestedDate: date ?? null, earliestDate, latestDate, nextDates, remaining, startTimes: tour.startTimes ?? [] };
 }
 
 // Effective seat capacity for an internal (tour, date): explicit admin per-date
@@ -283,15 +289,18 @@ export async function seatsRemaining(tourId, dateStr, capacity) {
 export async function getMonthAvailability({ id, month }) {
     const tour = await prisma.tour.findUnique({
         where: { id },
-        select: { status: true, bookingCutoffHours: true, unavailableDates: true },
+        select: { status: true, bookingCutoffHours: true, maxBookingDays: true, unavailableDates: true },
     });
     if (!tour) throw ApiError.notFound('Tour not found');
 
     const cutoff = Number(tour.bookingCutoffHours) || 0;
     const earliestDate = new Date(Date.now() + cutoff * 3600 * 1000).toISOString().slice(0, 10);
+    const latestDate = tour.maxBookingDays
+        ? new Date(Date.now() + tour.maxBookingDays * 86400000).toISOString().slice(0, 10)
+        : null;
     const unavailableDates = (tour.unavailableDates ?? []).filter((d) => String(d).startsWith(month));
 
-    return { month, earliestDate, active: tour.status === 'ACTIVE', unavailableDates };
+    return { month, earliestDate, latestDate, active: tour.status === 'ACTIVE', unavailableDates };
 }
 
 export async function getTourBySlug(slug) {

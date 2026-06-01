@@ -6,6 +6,10 @@ import { getStripe, isStripeConfigured } from '../../services/payments/stripe-cl
 import { recordPayment, confirmBooking } from '../booking/booking.service.js';
 import { resolveRate } from '../exchange-rate/exchange-rate.service.js';
 
+// `ui_mode: 'elements'` Checkout Sessions require this API version. Passed
+// per-request so PaymentIntents/refunds stay on the client's pinned version.
+const CHECKOUT_API_VERSION = '2026-03-25.dahlia';
+
 const ZERO_DECIMAL = new Set(['JPY', 'KRW', 'VND', 'CLP', 'XOF', 'XAF']);
 const OPEN_INTENT_STATES = new Set([
     'requires_payment_method',
@@ -67,10 +71,14 @@ export async function createCartCheckout(bookingIds, customerId, currency) {
     const ids = Array.from(new Set(bookingIds.map(Number))).filter(Boolean);
     if (!ids.length) throw ApiError.badRequest('No bookings to pay for', { code: 'NO_BOOKINGS' });
 
-    const bookings = await prisma.booking.findMany({ where: { id: { in: ids }, customerId } });
+    const bookings = await prisma.booking.findMany({
+        where: { id: { in: ids }, customerId },
+        include: { tour: { select: { name: true } } },
+    });
     if (bookings.length !== ids.length) throw ApiError.notFound('Some bookings were not found');
 
     const now = new Date();
+    const lineItems = [];
     let total = 0;
     for (const b of bookings) {
         if (b.paymentStatus === 'PAID') {
@@ -94,57 +102,99 @@ export async function createCartCheckout(bookingIds, customerId, currency) {
             }
             amt = amt * rate;
         }
+        amt = Number(amt.toFixed(2));
         total += amt;
+        lineItems.push({
+            quantity: 1,
+            price_data: {
+                currency: cur.toLowerCase(),
+                unit_amount: toMinorUnits(amt, cur),
+                product_data: { name: b.tour?.name || `Booking ${b.referenceNumber}` },
+            },
+        });
     }
     total = Number(total.toFixed(2));
 
     const stripe = getStripe();
+    const meta = { bookingIds: ids.join(','), customerId: String(customerId), currency: cur };
 
-    // Duplicate-payment guard: reuse an already-open intent for the same set.
-    const sharedIntent = bookings[0].paymentIntentId;
-    if (sharedIntent && bookings.every((b) => b.paymentIntentId === sharedIntent)) {
+    // Duplicate-payment guard: reuse an already-open Checkout Session for the set.
+    const sharedSession = bookings[0].paymentSessionId;
+    if (sharedSession && bookings.every((b) => b.paymentSessionId === sharedSession)) {
         try {
-            const existing = await stripe.paymentIntents.retrieve(sharedIntent);
-            if (existing && OPEN_INTENT_STATES.has(existing.status)) {
+            const existing = await stripe.checkout.sessions.retrieve(sharedSession, undefined, {
+                apiVersion: CHECKOUT_API_VERSION,
+            });
+            if (existing && existing.status === 'open' && existing.client_secret) {
                 return {
                     clientSecret: existing.client_secret,
                     publishableKey: env.STRIPE_PUBLISHABLE_KEY ?? null,
-                    paymentIntentId: existing.id,
+                    sessionId: existing.id,
                     amount: total,
                     currency: cur,
                     bookingIds: ids,
                 };
             }
         } catch {
-            // fall through and create a fresh intent
+            // fall through and create a fresh session
         }
     }
 
-    const idempotencyKey = `cart_${[...ids].sort((a, b) => a - b).join('-')}_${toMinorUnits(total, cur)}${cur}`;
-    const intent = await stripe.paymentIntents.create(
+    // Checkout Session in `elements` ui_mode (Stripe-recommended). Metadata is
+    // mirrored onto the PaymentIntent so the existing settle path (which keys off
+    // intent.metadata.bookingIds) works unchanged.
+    const idempotencyKey = `cs_${[...ids].sort((a, b) => a - b).join('-')}_${toMinorUnits(total, cur)}${cur}`;
+    const session = await stripe.checkout.sessions.create(
         {
-            amount: toMinorUnits(total, cur),
-            currency: cur.toLowerCase(),
-            metadata: { bookingIds: ids.join(','), customerId: String(customerId), currency: cur },
-            automatic_payment_methods: { enabled: true },
-            description: `Bookings ${bookings.map((b) => b.referenceNumber).join(', ')}`,
+            ui_mode: 'elements',
+            mode: 'payment',
+            line_items: lineItems,
+            metadata: meta,
+            payment_intent_data: { metadata: meta },
         },
-        { idempotencyKey }
+        { idempotencyKey, apiVersion: CHECKOUT_API_VERSION }
     );
 
     await prisma.booking.updateMany({
         where: { id: { in: ids } },
-        data: { paymentIntentId: intent.id, paymentCurrency: cur, paymentAmount: total },
+        data: { paymentSessionId: session.id, paymentCurrency: cur, paymentAmount: total },
     });
 
     return {
-        clientSecret: intent.client_secret,
+        clientSecret: session.client_secret,
         publishableKey: env.STRIPE_PUBLISHABLE_KEY ?? null,
-        paymentIntentId: intent.id,
+        sessionId: session.id,
         amount: total,
         currency: cur,
         bookingIds: ids,
     };
+}
+
+// Confirm-on-return fallback for Checkout Sessions: after the client confirms,
+// the FE calls this with the session id to settle immediately (webhook remains
+// authoritative). Idempotent + ownership-checked.
+export async function confirmCheckoutSession(sessionId, customerId) {
+    if (!isStripeConfigured() || !sessionId) return { ok: false, reason: 'not_configured' };
+    const stripe = getStripe();
+    let session;
+    try {
+        session = await stripe.checkout.sessions.retrieve(
+            sessionId,
+            { expand: ['payment_intent'] },
+            { apiVersion: CHECKOUT_API_VERSION }
+        );
+    } catch (err) {
+        logger.warn({ err: err?.message, sessionId }, 'confirmCheckoutSession: retrieve failed');
+        return { ok: false, reason: 'not_found' };
+    }
+    if (customerId != null && session?.metadata?.customerId && session.metadata.customerId !== String(customerId)) {
+        return { ok: false, reason: 'forbidden' };
+    }
+    if (session.payment_status !== 'paid') return { ok: false, status: session.payment_status };
+    const intent = session.payment_intent;
+    if (!intent || typeof intent === 'string') return { ok: false, reason: 'no_intent' };
+    await settlePaidIntent(intent);
+    return { ok: true };
 }
 
 // Confirm-on-return fallback: after the client confirms the card, the FE calls
@@ -200,6 +250,11 @@ async function settleBooking(bookingId, intent) {
         logger.warn({ bookingId }, 'stripe webhook: booking not found');
         return;
     }
+
+    // Persist the resulting PaymentIntent id on the booking so cancellation /
+    // refund (refundPaymentIntent(booking.paymentIntentId)) works — with Checkout
+    // Sessions the PI only exists once payment completes.
+    await prisma.booking.update({ where: { id: bookingId }, data: { paymentIntentId: intent.id } }).catch(() => {});
 
     // Record each booking's payment in its OWN currency (Stripe charged the
     // converted cart sum; per-booking ledger stays in the booking currency).

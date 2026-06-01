@@ -13,6 +13,9 @@ export async function checkoutCart(req, res) {
 }
 
 export async function confirm(req, res) {
-    const result = await paymentService.confirmPaidIntent(req.body.paymentIntentId, req.customer.id);
+    const { sessionId, paymentIntentId } = req.body;
+    const result = sessionId
+        ? await paymentService.confirmCheckoutSession(sessionId, req.customer.id)
+        : await paymentService.confirmPaidIntent(paymentIntentId, req.customer.id);
     return success(res, result, { message: 'Payment confirmed' });
 }

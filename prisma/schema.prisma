@@ -676,6 +676,7 @@ model Booking {
 
   voucherToken    String?  @unique
   paymentIntentId String?
+  paymentSessionId String?
   paymentCurrency String?  @db.VarChar(3)
   paymentAmount   Decimal? @db.Decimal(14, 2)
 

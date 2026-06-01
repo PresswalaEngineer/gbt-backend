@@ -27,7 +27,12 @@ router.post(
 router.post(
     '/confirm',
     requireCustomer,
-    validate({ body: z.object({ paymentIntentId: z.string().min(1) }).strict() }),
+    validate({
+        body: z
+            .object({ sessionId: z.string().min(1).optional(), paymentIntentId: z.string().min(1).optional() })
+            .strict()
+            .refine((b) => b.sessionId || b.paymentIntentId, 'sessionId or paymentIntentId required'),
+    }),
     asyncHandler(paymentController.confirm)
 );
 

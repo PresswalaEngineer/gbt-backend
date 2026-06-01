@@ -533,6 +533,111 @@ export async function updateBooking(id, payload) {
     return booking;
 }
 
+// Shared cancellation core used by BOTH the admin and customer cancel flows:
+// supplier sync → Stripe refund (+ ledger) → local cancel → free inventory →
+// emails. `booking` must already be loaded with { tour, supplier } and guarded.
+async function performCancellation(booking, { reason, byCustomer = false, actorId = null } = {}) {
+    const id = booking.id;
+    const wasConfirmed = booking.status === 'CONFIRMED';
+    const wasPaid = booking.paymentStatus === 'PAID';
+    const dateStr = booking.travelDate.toISOString().slice(0, 10);
+    const reasonText = reason || (byCustomer ? 'Cancelled by customer' : 'Cancelled by admin');
+
+    // 1) Sync the cancellation with the supplier (best-effort).
+    let vendorCancel = { attempted: false, ok: true };
+    if (booking.tour?.apiType !== 'NONE' && booking.externalRef) {
+        vendorCancel.attempted = true;
+        const r = await cancelVendorBooking({ tour: booking.tour, supplier: booking.supplier, booking });
+        vendorCancel.ok = !!r?.ok;
+    }
+
+    // 2) Refund the payment (real Stripe refund, else a manual-refund ledger row).
+    let refundAmount = 0;
+    let refundedReal = false;
+    if (wasPaid) {
+        const r = await refundPaymentIntent(booking.paymentIntentId);
+        refundedReal = r.refunded;
+        refundAmount = Number(booking.totalAmount);
+        await prisma.bookingPayment.create({
+            data: {
+                bookingId: id,
+                status: 'REFUNDED',
+                amount: refundAmount,
+                currency: booking.currency,
+                provider: 'stripe',
+                providerRef: r.providerRef ?? null,
+                isRefund: true,
+                notes: refundedReal ? 'Refunded via Stripe' : 'Refund recorded — pending manual processing',
+            },
+        });
+    }
+
+    // 3) Cancel locally.
+    const updated = await prisma.booking.update({
+        where: { id },
+        data: {
+            status: 'CANCELLED',
+            paymentStatus: wasPaid ? 'REFUNDED' : booking.paymentStatus,
+            cancellationReason: reasonText,
+            cancelledAt: new Date(),
+            refundAmount: wasPaid ? refundAmount : null,
+            refundedAt: wasPaid ? new Date() : null,
+        },
+        include: RELATIONS,
+    });
+    await prisma.bookingEvent.create({
+        data: {
+            bookingId: id,
+            type: 'BOOKING_CANCELLED',
+            message: reasonText,
+            metadata: { byCustomer, actorId, refundAmount, refundedReal, vendorCancel },
+        },
+    });
+    if (vendorCancel.attempted && !vendorCancel.ok) {
+        emitAlert('VENDOR_DISPATCH_FAILED', {
+            referenceNumber: booking.referenceNumber,
+            tourName: booking.tour?.name,
+            provider: booking.tour?.apiType,
+            leadGuestName: booking.leadGuestName,
+            leadGuestEmail: booking.leadGuestEmail,
+            travelDate: dateStr,
+            vendorStatus: 'CANCEL_FAILED — cancel manually with the supplier',
+        }).catch(() => {});
+    }
+
+    // 4) Free inventory + broadcast remaining seats.
+    if (wasConfirmed) await decrementBookingCount(booking.tourId);
+    try {
+        if (booking.tour?.apiType === 'NONE') {
+            const cap = await seatCapacityFor(booking.tourId, dateStr, booking.tour.dailyCapacity);
+            const remaining = cap == null ? null : await seatsRemaining(booking.tourId, dateStr, cap);
+            emitAvailabilityChanged(booking.tourId, dateStr, remaining);
+        }
+    } catch {
+        /* non-blocking */
+    }
+
+    // 5) Cancellation + refund email to the customer (+ admins).
+    emitAlert('BOOKING_CANCELLED', {
+        referenceNumber: booking.referenceNumber,
+        leadGuestName: booking.leadGuestName,
+        leadGuestEmail: booking.leadGuestEmail,
+        tourName: booking.tour?.name,
+        travelDate: dateStr,
+        refundAmount: wasPaid ? refundAmount.toFixed(2) : '0.00',
+        currency: booking.currency,
+        refundNote: wasPaid
+            ? refundedReal
+                ? 'Your refund has been issued and will appear on your statement within 5–10 business days.'
+                : 'Your refund has been recorded and is being processed.'
+            : 'No payment had been captured, so no refund is required.',
+    }).catch(() => {});
+
+    return { booking: updated, refunded: wasPaid, refundedReal, refundAmount, vendorCancel };
+}
+
+// Admin/staff cancel — full refund + inventory release + emails (was previously
+// a bare status flip with no refund/inventory/email).
 export async function cancelBooking(id, payload, { actorId } = {}) {
     const existing = await prisma.booking.findUnique({
         where: { id },
@@ -542,31 +647,11 @@ export async function cancelBooking(id, payload, { actorId } = {}) {
     if (existing.status === 'CANCELLED' || existing.status === 'REFUNDED') {
         throw ApiError.badRequest('Booking already cancelled or refunded', { code: 'ALREADY_CANCELLED' });
     }
-    if (existing.tour?.apiType !== 'NONE' && existing.externalRef) {
-        await cancelVendorBooking({ tour: existing.tour, supplier: existing.supplier, booking: existing });
+    if (existing.status !== 'PENDING' && existing.status !== 'CONFIRMED') {
+        throw ApiError.badRequest(`A ${existing.status} booking cannot be cancelled.`, { code: 'INVALID_BOOKING_STATE' });
     }
-    const updated = await prisma.booking.update({
-        where: { id },
-        data: {
-            status: 'CANCELLED',
-            cancellationReason: payload.reason,
-            cancelledAt: new Date(),
-            refundAmount: payload.refundAmount ?? null,
-        },
-        include: RELATIONS,
-    });
-    await prisma.bookingEvent.create({
-        data: {
-            bookingId: id,
-            type: 'BOOKING_CANCELLED',
-            message: payload.reason,
-            metadata: { actorId, refundAmount: payload.refundAmount ?? null },
-        },
-    });
-    if (existing.status === 'CONFIRMED') {
-        await decrementBookingCount(existing.tourId);
-    }
-    return updated;
+    const result = await performCancellation(existing, { reason: payload?.reason, byCustomer: false, actorId });
+    return result.booking;
 }
 
 export async function recordPayment(id, payload) {
@@ -731,103 +816,7 @@ export async function cancelCustomerBooking(id, customerId, { reason } = {}) {
     if (booking.status !== 'PENDING' && booking.status !== 'CONFIRMED') {
         throw ApiError.badRequest(`A ${booking.status} booking cannot be cancelled.`, { code: 'INVALID_BOOKING_STATE' });
     }
-
-    const wasConfirmed = booking.status === 'CONFIRMED';
-    const wasPaid = booking.paymentStatus === 'PAID';
-    const dateStr = booking.travelDate.toISOString().slice(0, 10);
-
-    // 1) Sync the cancellation with the supplier (best-effort — never traps the
-    //    customer's money if the vendor call fails; ops gets alerted instead).
-    let vendorCancel = { attempted: false, ok: true };
-    if (booking.tour?.apiType !== 'NONE' && booking.externalRef) {
-        vendorCancel.attempted = true;
-        const r = await cancelVendorBooking({ tour: booking.tour, supplier: booking.supplier, booking });
-        vendorCancel.ok = !!r?.ok;
-    }
-
-    // 2) Refund the payment.
-    let refundAmount = 0;
-    let refundedReal = false;
-    if (wasPaid) {
-        const r = await refundPaymentIntent(booking.paymentIntentId);
-        refundedReal = r.refunded;
-        refundAmount = Number(booking.totalAmount);
-        await prisma.bookingPayment.create({
-            data: {
-                bookingId: id,
-                status: 'REFUNDED',
-                amount: refundAmount,
-                currency: booking.currency,
-                provider: 'stripe',
-                providerRef: r.providerRef ?? null,
-                isRefund: true,
-                notes: refundedReal ? 'Refunded via Stripe' : 'Refund recorded — pending manual processing',
-            },
-        });
-    }
-
-    // 3) Cancel locally.
-    const updated = await prisma.booking.update({
-        where: { id },
-        data: {
-            status: 'CANCELLED',
-            paymentStatus: wasPaid ? 'REFUNDED' : booking.paymentStatus,
-            cancellationReason: reason || 'Cancelled by customer',
-            cancelledAt: new Date(),
-            refundAmount: wasPaid ? refundAmount : null,
-            refundedAt: wasPaid ? new Date() : null,
-        },
-        include: RELATIONS,
-    });
-    await prisma.bookingEvent.create({
-        data: {
-            bookingId: id,
-            type: 'BOOKING_CANCELLED',
-            message: reason || 'Cancelled by customer',
-            metadata: { byCustomer: true, refundAmount, refundedReal, vendorCancel },
-        },
-    });
-    if (vendorCancel.attempted && !vendorCancel.ok) {
-        emitAlert('VENDOR_DISPATCH_FAILED', {
-            referenceNumber: booking.referenceNumber,
-            tourName: booking.tour?.name,
-            provider: booking.tour?.apiType,
-            leadGuestName: booking.leadGuestName,
-            leadGuestEmail: booking.leadGuestEmail,
-            travelDate: dateStr,
-            vendorStatus: 'CANCEL_FAILED — cancel manually with the supplier',
-        }).catch(() => {});
-    }
-
-    // 4) Free inventory + broadcast remaining seats.
-    if (wasConfirmed) await decrementBookingCount(booking.tourId);
-    try {
-        if (booking.tour?.apiType === 'NONE') {
-            const cap = await seatCapacityFor(booking.tourId, dateStr, booking.tour.dailyCapacity);
-            const remaining = cap == null ? null : await seatsRemaining(booking.tourId, dateStr, cap);
-            emitAvailabilityChanged(booking.tourId, dateStr, remaining);
-        }
-    } catch {
-        /* non-blocking */
-    }
-
-    // 5) Cancellation email to the customer (+ admins).
-    emitAlert('BOOKING_CANCELLED', {
-        referenceNumber: booking.referenceNumber,
-        leadGuestName: booking.leadGuestName,
-        leadGuestEmail: booking.leadGuestEmail,
-        tourName: booking.tour?.name,
-        travelDate: dateStr,
-        refundAmount: wasPaid ? refundAmount.toFixed(2) : '0.00',
-        currency: booking.currency,
-        refundNote: wasPaid
-            ? refundedReal
-                ? 'Your refund has been issued and will appear on your statement within 5–10 business days.'
-                : 'Your refund has been recorded and is being processed.'
-            : 'No payment had been captured, so no refund is required.',
-    }).catch(() => {});
-
-    return { booking: updated, refunded: wasPaid, refundedReal, refundAmount, vendorCancel };
+    return performCancellation(booking, { reason, byCustomer: true });
 }
 
 export async function quote({ tourId, paxBreakdown, couponCode }) {

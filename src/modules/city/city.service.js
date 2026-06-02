@@ -1,9 +1,17 @@
 import { prisma } from '../../config/db.js';
 import { ApiError } from '../../utils/api-error.js';
+import { uniqueSlug } from '../../utils/slug.js';
 
 const COUNTRY_SELECT = {
     country: { select: { id: true, name: true, code: true, currency: true } },
 };
+
+async function buildCitySlug(name, excludeId) {
+    return uniqueSlug(name, async (slug) => {
+        const existing = await prisma.city.findUnique({ where: { slug }, select: { id: true } });
+        return !!existing && existing.id !== excludeId;
+    });
+}
 
 export async function listCities({ search, countryId, status, page, limit }) {
     const where = {
@@ -40,6 +48,12 @@ export async function getCity(id) {
     return city;
 }
 
+export async function getCityBySlug(slug) {
+    const city = await prisma.city.findUnique({ where: { slug }, include: COUNTRY_SELECT });
+    if (!city) throw ApiError.notFound('City not found');
+    return city;
+}
+
 async function ensureCountryExists(countryId) {
     if (countryId === undefined) return;
     const country = await prisma.country.findUnique({ where: { id: countryId } });
@@ -48,12 +62,22 @@ async function ensureCountryExists(countryId) {
 
 export async function createCity(payload) {
     await ensureCountryExists(payload.countryId);
-    return prisma.city.create({ data: payload, include: COUNTRY_SELECT });
+    const slug = await buildCitySlug(payload.slug || payload.name);
+    return prisma.city.create({ data: { ...payload, slug }, include: COUNTRY_SELECT });
 }
 
 export async function updateCity(id, payload) {
     if (payload.countryId !== undefined) await ensureCountryExists(payload.countryId);
-    return prisma.city.update({ where: { id }, data: payload, include: COUNTRY_SELECT });
+    const data = { ...payload };
+    // Re-slug when an explicit slug is sent, or when the name changes and no
+    // slug currently exists. Keep existing slugs stable otherwise (SEO).
+    if (payload.slug) {
+        data.slug = await buildCitySlug(payload.slug, id);
+    } else if (payload.name) {
+        const current = await prisma.city.findUnique({ where: { id }, select: { slug: true } });
+        if (!current?.slug) data.slug = await buildCitySlug(payload.name, id);
+    }
+    return prisma.city.update({ where: { id }, data, include: COUNTRY_SELECT });
 }
 
 export async function deleteCity(id) {

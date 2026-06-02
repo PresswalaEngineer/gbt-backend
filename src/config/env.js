@@ -137,6 +137,9 @@ const envSchema = z
         ),
     ALERT_DAILY_REPORT_CRON: z.string().default('0 9 * * *'),
     ALERT_DAILY_REPORT_TIMEZONE: z.string().default('UTC'),
+    // Minutes to wait after signup before the welcome/onboarding email is sent
+    // (gives the experience a natural "settle in" delay; swept by a cron).
+    ONBOARDING_EMAIL_DELAY_MINUTES: z.coerce.number().int().min(0).max(10080).default(15),
     FX_BASE_CURRENCY: z.string().trim().length(3).toUpperCase().default('USD'),
     FX_SYNC_URL: z
         .string()

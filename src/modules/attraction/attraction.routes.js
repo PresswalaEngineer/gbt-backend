@@ -5,6 +5,7 @@ import { validate } from '../../middleware/validate.js';
 import {
     createAttractionSchema,
     idParamSchema,
+    slugParamSchema,
     listAttractionSchema,
     updateAttractionSchema,
 } from './attraction.validation.js';
@@ -17,6 +18,13 @@ router.get(
     optionalAuth,
     validate({ query: listAttractionSchema }),
     asyncHandler(attractionController.list)
+);
+
+router.get(
+    '/slug/:slug',
+    optionalAuth,
+    validate({ params: slugParamSchema }),
+    asyncHandler(attractionController.getBySlug)
 );
 
 router.get(

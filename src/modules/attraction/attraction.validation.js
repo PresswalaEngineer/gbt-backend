@@ -11,6 +11,7 @@ const optionalString = z
 
 const baseFields = {
     name: z.string().trim().min(2).max(200),
+    slug: z.string().trim().max(80).optional(),
     cityId: z.coerce.number().int().positive(),
     categoryId: z.coerce.number().int().positive().nullable().optional(),
     thumbnail: optionalString,
@@ -53,4 +54,8 @@ export const listAttractionSchema = z.object({
 
 export const idParamSchema = z.object({
     id: z.coerce.number().int().positive(),
+});
+
+export const slugParamSchema = z.object({
+    slug: z.string().trim().min(1).max(120),
 });

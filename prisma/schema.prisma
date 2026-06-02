@@ -136,6 +136,7 @@ enum AlertType {
   COUPON_EXPIRED
   VENDOR_DISPATCH_FAILED
   BOOKING_CANCELLED
+  WELCOME_ONBOARDING
 }
 
 enum EmailDeliveryStatus {
@@ -223,6 +224,7 @@ model Country {
 model City {
   id               Int          @id @default(autoincrement())
   name             String
+  slug             String?      @unique
   countryId        Int
   country          Country      @relation(fields: [countryId], references: [id], onDelete: Cascade)
   population       String?
@@ -259,6 +261,7 @@ model Category {
 model Attraction {
   id               Int       @id @default(autoincrement())
   name             String
+  slug             String?   @unique
   cityId           Int
   city             City      @relation(fields: [cityId], references: [id], onDelete: Cascade)
   categoryId       Int?
@@ -550,6 +553,7 @@ model Customer {
   country       Country?       @relation(fields: [countryId], references: [id], onDelete: SetNull)
   notes         String?
   status        Status         @default(ACTIVE)
+  welcomeEmailSent Boolean      @default(false)
   bookings      Booking[]
   refreshTokens RefreshToken[]
   wishlists     Wishlist[]

@@ -1,10 +1,18 @@
 import { prisma } from '../../config/db.js';
 import { ApiError } from '../../utils/api-error.js';
+import { uniqueSlug } from '../../utils/slug.js';
 
 const RELATIONS = {
-    city: { select: { id: true, name: true, countryId: true, country: { select: { id: true, name: true, code: true } } } },
+    city: { select: { id: true, name: true, slug: true, countryId: true, country: { select: { id: true, name: true, code: true } } } },
     category: { select: { id: true, name: true } },
 };
+
+async function buildAttractionSlug(name, excludeId) {
+    return uniqueSlug(name, async (slug) => {
+        const existing = await prisma.attraction.findUnique({ where: { slug }, select: { id: true } });
+        return !!existing && existing.id !== excludeId;
+    });
+}
 
 export async function listAttractions({ search, cityId, categoryId, status, page, limit }) {
     const where = {
@@ -46,6 +54,12 @@ export async function getAttraction(id) {
     return attraction;
 }
 
+export async function getAttractionBySlug(slug) {
+    const attraction = await prisma.attraction.findUnique({ where: { slug }, include: RELATIONS });
+    if (!attraction) throw ApiError.notFound('Attraction not found');
+    return attraction;
+}
+
 async function ensureCity(cityId) {
     if (cityId === undefined) return;
     const city = await prisma.city.findUnique({ where: { id: cityId } });
@@ -61,13 +75,21 @@ async function ensureCategory(categoryId) {
 export async function createAttraction(payload) {
     await ensureCity(payload.cityId);
     await ensureCategory(payload.categoryId ?? null);
-    return prisma.attraction.create({ data: payload, include: RELATIONS });
+    const slug = await buildAttractionSlug(payload.slug || payload.name);
+    return prisma.attraction.create({ data: { ...payload, slug }, include: RELATIONS });
 }
 
 export async function updateAttraction(id, payload) {
     if (payload.cityId !== undefined) await ensureCity(payload.cityId);
     if (payload.categoryId !== undefined) await ensureCategory(payload.categoryId);
-    return prisma.attraction.update({ where: { id }, data: payload, include: RELATIONS });
+    const data = { ...payload };
+    if (payload.slug) {
+        data.slug = await buildAttractionSlug(payload.slug, id);
+    } else if (payload.name) {
+        const current = await prisma.attraction.findUnique({ where: { id }, select: { slug: true } });
+        if (!current?.slug) data.slug = await buildAttractionSlug(payload.name, id);
+    }
+    return prisma.attraction.update({ where: { id }, data, include: RELATIONS });
 }
 
 export async function deleteAttraction(id) {

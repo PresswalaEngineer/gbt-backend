@@ -11,6 +11,11 @@ export async function getById(req, res) {
     return success(res, city);
 }
 
+export async function getBySlug(req, res) {
+    const city = await cityService.getCityBySlug(req.params.slug);
+    return success(res, city);
+}
+
 export async function create(req, res) {
     const city = await cityService.createCity(req.body);
     return created(res, city, { message: 'City created' });

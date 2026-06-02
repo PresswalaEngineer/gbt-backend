@@ -11,6 +11,11 @@ export async function getById(req, res) {
     return success(res, attraction);
 }
 
+export async function getBySlug(req, res) {
+    const attraction = await attractionService.getAttractionBySlug(req.params.slug);
+    return success(res, attraction);
+}
+
 export async function create(req, res) {
     const attraction = await attractionService.createAttraction(req.body);
     return created(res, attraction, { message: 'Attraction created' });

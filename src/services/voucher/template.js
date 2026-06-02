@@ -1,4 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { env } from '../../config/env.js';
+
+// Official Global Bus Tours logo, embedded as a base64 data URI so it renders
+// reliably inside the Puppeteer PDF + email attachment (no network fetch).
+const __dirname = dirname(fileURLToPath(import.meta.url));
+let LOGO_DATA_URI = '';
+try {
+    LOGO_DATA_URI = `data:image/png;base64,${readFileSync(join(__dirname, 'assets', 'logo.png')).toString('base64')}`;
+} catch {
+    LOGO_DATA_URI = '';
+}
 
 // Canonical voucher HTML — clean, single-page, print-friendly e-ticket.
 // No emojis (inline SVG icons), compact so the footer never orphans, and a
@@ -129,6 +142,8 @@ export function buildVoucherHtml(b, qrDataUrl = '') {
   .sheet{max-width:820px;margin:18px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.07)}
   .hdr{background:#c8102e;color:#fff;padding:16px 22px;display:flex;justify-content:space-between;align-items:center;gap:14px}
   .brand{display:flex;align-items:center;gap:11px}
+  .brand .logobox{background:#fff;border-radius:9px;padding:7px 13px;display:inline-flex;align-items:center}
+  .brand .logobox img{height:30px;width:auto;display:block}
   .brand .logo{width:40px;height:40px;border-radius:9px;background:#fff;color:#c8102e;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px}
   .brand h1{font-size:17px;letter-spacing:.4px;line-height:1.1}
   .brand p{font-size:9.5px;opacity:.85;letter-spacing:1.6px;margin-top:2px}
@@ -197,8 +212,9 @@ export function buildVoucherHtml(b, qrDataUrl = '') {
 <body><div class="sheet">
   <div class="hdr">
     <div class="brand">
-      <div class="logo">GB</div>
-      <div><h1>GLOBAL BUS TOURS</h1><p>SEE THE WORLD, ONE STOP AT A TIME</p></div>
+      ${LOGO_DATA_URI
+        ? `<span class="logobox"><img src="${LOGO_DATA_URI}" alt="Global Bus Tours"/></span>`
+        : `<div class="logo">GB</div><div><h1>GLOBAL BUS TOURS</h1><p>SEE THE WORLD, ONE STOP AT A TIME</p></div>`}
     </div>
     <div class="right">
       <div class="lbl">BOOKING ${paid ? 'CONFIRMATION' : 'RECEIPT'}</div>

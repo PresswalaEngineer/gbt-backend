@@ -8,6 +8,7 @@ export const ALERT_TYPES = [
     'COUPON_EXPIRED',
     'VENDOR_DISPATCH_FAILED',
     'BOOKING_CANCELLED',
+    'WELCOME_ONBOARDING',
 ];
 
 const baseHtml = (title, body) =>
@@ -141,5 +142,24 @@ export const DEFAULT_TEMPLATES = {
         ),
         placeholders: ['referenceNumber', 'tourName', 'provider', 'leadGuestName', 'leadGuestEmail', 'travelDate', 'vendorStatus'],
         description: 'Ops alert when a paid booking fails to dispatch to the supplier (TourCMS/Ventrata).',
+    },
+    WELCOME_ONBOARDING: {
+        name: 'Welcome / Onboarding',
+        subject: 'Welcome to Global Bus Tours, {{name}}! 🌍',
+        bodyHtml: baseHtml(
+            'Welcome aboard 🚌',
+            `<p>Hi {{name}},</p>` +
+                `<p>Thanks for creating your Global Bus Tours account — we're thrilled to have you. You're all set to discover unforgettable city tours, skip-the-line attractions and multi-day adventures across the globe.</p>` +
+                `<p>Here's how to get the most out of your account:</p>` +
+                `<ul style="padding-left:18px;margin:12px 0">` +
+                `<li style="margin-bottom:6px">💛 Save tours to your <b>wishlist</b> and come back to them any time</li>` +
+                `<li style="margin-bottom:6px">🛒 Reserve seats instantly with a live hold timer — pay when you're ready</li>` +
+                `<li style="margin-bottom:6px">🎫 Get instant e-vouchers with QR codes for every booking</li>` +
+                `</ul>` +
+                `<p style="text-align:center;margin:24px 0"><a href="{{exploreUrl}}" style="background:#c8102e;color:#fff;text-decoration:none;padding:12px 30px;border-radius:8px;font-weight:bold;display:inline-block">Explore tours</a></p>` +
+                `<p style="color:#6b7280;font-size:13px">Questions? Just reply to this email — our team is here to help. Happy travels!</p>`
+        ),
+        placeholders: ['name', 'email', 'exploreUrl'],
+        description: 'Welcome email sent to a customer a short while after they create their account (first signup).',
     },
 };

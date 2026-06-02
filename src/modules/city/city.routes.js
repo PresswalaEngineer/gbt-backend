@@ -5,6 +5,7 @@ import { validate } from '../../middleware/validate.js';
 import {
     createCitySchema,
     idParamSchema,
+    slugParamSchema,
     listCitySchema,
     updateCitySchema,
 } from './city.validation.js';
@@ -13,6 +14,7 @@ import * as cityController from './city.controller.js';
 const router = Router();
 
 router.get('/', optionalAuth, validate({ query: listCitySchema }), asyncHandler(cityController.list));
+router.get('/slug/:slug', optionalAuth, validate({ params: slugParamSchema }), asyncHandler(cityController.getBySlug));
 router.get('/:id', optionalAuth, validate({ params: idParamSchema }), asyncHandler(cityController.getById));
 
 router.post(

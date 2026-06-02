@@ -13,6 +13,7 @@ const heroImagesSchema = z
 export const createCitySchema = z
     .object({
         name: z.string().trim().min(2).max(120),
+        slug: z.string().trim().max(80).optional(),
         countryId: z.coerce.number().int().positive(),
         population: z.string().trim().max(40).nullable().optional().or(z.literal('')),
         status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
@@ -30,6 +31,7 @@ export const createCitySchema = z
 export const updateCitySchema = z
     .object({
         name: z.string().trim().min(2).max(120).optional(),
+        slug: z.string().trim().max(80).optional(),
         countryId: z.coerce.number().int().positive().optional(),
         population: z.string().trim().max(40).nullable().optional(),
         status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
@@ -50,4 +52,8 @@ export const listCitySchema = z.object({
 
 export const idParamSchema = z.object({
     id: z.coerce.number().int().positive(),
+});
+
+export const slugParamSchema = z.object({
+    slug: z.string().trim().min(1).max(120),
 });

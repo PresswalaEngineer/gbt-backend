@@ -6,6 +6,7 @@ import { emitAlert } from './alert.service.js';
 
 let dailyJob;
 let expiryJob;
+let onboardingJob;
 
 function startOfDay(d) {
     const x = new Date(d);
@@ -81,8 +82,38 @@ async function runExpiredCouponSweep() {
     }
 }
 
+// Sends the welcome/onboarding email a configurable delay after a customer
+// first creates their account. Runs as a sweep (every few minutes) so it covers
+// both password + Google signups and survives restarts; each customer is mailed
+// exactly once via the welcomeEmailSent flag.
+async function runOnboardingSweep() {
+    try {
+        const cutoff = new Date(Date.now() - env.ONBOARDING_EMAIL_DELAY_MINUTES * 60 * 1000);
+        const fresh = await prisma.customer.findMany({
+            where: {
+                welcomeEmailSent: false,
+                status: 'ACTIVE',
+                createdAt: { lte: cutoff },
+            },
+            select: { id: true, name: true, email: true },
+            take: 50,
+        });
+        for (const c of fresh) {
+            await emitAlert(
+                'WELCOME_ONBOARDING',
+                { name: c.name || 'traveller', email: c.email, exploreUrl: `${env.STOREFRONT_URL}/search` },
+                { recipients: [c.email] }
+            );
+            await prisma.customer.update({ where: { id: c.id }, data: { welcomeEmailSent: true } });
+        }
+        if (fresh.length) logger.info({ count: fresh.length }, 'onboarding emails dispatched');
+    } catch (err) {
+        logger.error({ err }, 'onboarding email sweep failed');
+    }
+}
+
 export function startSchedulers() {
-    if (dailyJob || expiryJob) return;
+    if (dailyJob || expiryJob || onboardingJob) return;
     if (!env.MAIL_ENABLED) {
         logger.info('mail disabled — schedulers will run but emails will be SKIPPED');
     }
@@ -94,6 +125,11 @@ export function startSchedulers() {
     expiryJob = cron.schedule(
         '*/30 * * * *',
         runExpiredCouponSweep,
+        { timezone: env.ALERT_DAILY_REPORT_TIMEZONE }
+    );
+    onboardingJob = cron.schedule(
+        '*/5 * * * *',
+        runOnboardingSweep,
         { timezone: env.ALERT_DAILY_REPORT_TIMEZONE }
     );
     logger.info(
@@ -110,5 +146,9 @@ export function stopSchedulers() {
     if (expiryJob) {
         expiryJob.stop();
         expiryJob = undefined;
+    }
+    if (onboardingJob) {
+        onboardingJob.stop();
+        onboardingJob = undefined;
     }
 }

@@ -1,6 +1,19 @@
 import { prisma } from '../../config/db.js';
 import { logger } from '../../utils/logger.js';
+import { env } from '../../config/env.js';
 import { getTransport, getDefaultFrom } from './transport.js';
+
+// Prepend the official Global Bus Tours logo to every outgoing email. Uses a
+// hosted URL (email clients block base64), inserted just inside <body> so it
+// sits above the template's own header. Applies to all templates centrally.
+function withBrandLogo(html) {
+    if (!html || typeof html !== 'string') return html;
+    const logo =
+        `<div style="text-align:center;padding:18px 0 8px;background:#f8f9fb">` +
+        `<img src="${env.STOREFRONT_URL}/logo.png" alt="Global Bus Tours" style="height:38px;width:auto;display:inline-block"/>` +
+        `</div>`;
+    return /<body[^>]*>/i.test(html) ? html.replace(/(<body[^>]*>)/i, `$1${logo}`) : logo + html;
+}
 
 export async function sendEmail({
     alertType,
@@ -15,6 +28,7 @@ export async function sendEmail({
     metadata = null,
     attachments = null,
 }) {
+    const html = withBrandLogo(bodyHtml);
     const log = await prisma.emailLog.create({
         data: {
             alertType,
@@ -22,7 +36,7 @@ export async function sendEmail({
             toEmail,
             toName,
             subject,
-            bodyHtml,
+            bodyHtml: html,
             status: 'QUEUED',
             metadata,
         },
@@ -44,7 +58,7 @@ export async function sendEmail({
             from,
             to: toName ? `"${toName}" <${toEmail}>` : toEmail,
             subject,
-            html: bodyHtml,
+            html,
             text: bodyText || undefined,
             attachments: attachments && attachments.length ? attachments : undefined,
         });

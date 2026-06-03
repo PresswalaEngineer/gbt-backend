@@ -9,6 +9,7 @@ export const ALERT_TYPES = [
     'VENDOR_DISPATCH_FAILED',
     'BOOKING_CANCELLED',
     'WELCOME_ONBOARDING',
+    'DEPARTURE_REMINDER',
 ];
 
 const baseHtml = (title, body) =>
@@ -161,5 +162,25 @@ export const DEFAULT_TEMPLATES = {
         ),
         placeholders: ['name', 'email', 'exploreUrl'],
         description: 'Welcome email sent to a customer a short while after they create their account (first signup).',
+    },
+    DEPARTURE_REMINDER: {
+        name: 'Departure Reminder (24h)',
+        subject: 'Your tour is tomorrow — {{tourName}} ({{referenceNumber}})',
+        bodyHtml: baseHtml(
+            'See you soon 🚌',
+            `<p>Hi {{leadGuestName}},</p>` +
+                `<p>Just a friendly reminder that your tour departs in about 24 hours. Here are your details:</p>` +
+                `<table cellspacing="0" cellpadding="0" style="width:100%;margin:16px 0;border:1px solid #eaecef;border-radius:8px">` +
+                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px">Tour</td><td style="padding:8px 14px;text-align:right;font-weight:bold">{{tourName}}</td></tr>` +
+                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px;border-top:1px solid #f0f1f3">Date</td><td style="padding:8px 14px;text-align:right;border-top:1px solid #f0f1f3">{{travelDate}}{{startTime}}</td></tr>` +
+                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px;border-top:1px solid #f0f1f3">Travellers</td><td style="padding:8px 14px;text-align:right;border-top:1px solid #f0f1f3">{{paxCount}}</td></tr>` +
+                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px;border-top:1px solid #f0f1f3">Meeting point</td><td style="padding:8px 14px;text-align:right;border-top:1px solid #f0f1f3">{{meetingPoint}}</td></tr>` +
+                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px;border-top:1px solid #f0f1f3">Reference</td><td style="padding:8px 14px;text-align:right;font-weight:bold;border-top:1px solid #f0f1f3">{{referenceNumber}}</td></tr>` +
+                `</table>` +
+                `<p style="text-align:center;margin:22px 0"><a href="{{voucherUrl}}" style="background:#c8102e;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:bold;display:inline-block">View your voucher</a></p>` +
+                `<p style="color:#6b7280;font-size:13px">Please arrive 15 minutes early and bring your voucher (PDF or QR). Have a wonderful trip!</p>`
+        ),
+        placeholders: ['leadGuestName', 'tourName', 'travelDate', 'startTime', 'paxCount', 'meetingPoint', 'referenceNumber', 'voucherUrl'],
+        description: 'Reminder email sent to the customer ~24 hours before their tour departs.',
     },
 };

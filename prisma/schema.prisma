@@ -137,6 +137,7 @@ enum AlertType {
   VENDOR_DISPATCH_FAILED
   BOOKING_CANCELLED
   WELCOME_ONBOARDING
+  DEPARTURE_REMINDER
 }
 
 enum EmailDeliveryStatus {
@@ -660,6 +661,7 @@ model Booking {
   status        BookingStatus @default(PENDING)
   paymentStatus PaymentStatus @default(PENDING)
   voucherSent   Boolean       @default(false)
+  reminderSent  Boolean       @default(false)
 
   currency         String   @db.VarChar(3)
   supplierCurrency String?  @db.VarChar(3)

@@ -2,11 +2,13 @@ import cron from 'node-cron';
 import { prisma } from '../../config/db.js';
 import { logger } from '../../utils/logger.js';
 import { env } from '../../config/env.js';
+import { voucherUrl } from '../../services/voucher/index.js';
 import { emitAlert } from './alert.service.js';
 
 let dailyJob;
 let expiryJob;
 let onboardingJob;
+let reminderJob;
 
 function startOfDay(d) {
     const x = new Date(d);
@@ -112,8 +114,48 @@ async function runOnboardingSweep() {
     }
 }
 
+// Sends a reminder email ~24h before departure. Runs hourly; catches every
+// CONFIRMED booking whose travel date falls inside the next 24h window and that
+// hasn't been reminded yet (reminderSent flag → exactly once).
+async function runDepartureReminderSweep() {
+    try {
+        const now = new Date();
+        const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        const due = await prisma.booking.findMany({
+            where: {
+                status: 'CONFIRMED',
+                reminderSent: false,
+                travelDate: { gte: now, lte: in24h },
+            },
+            include: { tour: { select: { name: true, meetingPoint: true } } },
+            take: 100,
+        });
+        for (const b of due) {
+            await emitAlert(
+                'DEPARTURE_REMINDER',
+                {
+                    leadGuestName: b.leadGuestName,
+                    leadGuestEmail: b.leadGuestEmail,
+                    tourName: b.tour?.name || 'your tour',
+                    travelDate: b.travelDate.toISOString().slice(0, 10),
+                    startTime: b.startTime ? ` · ${b.startTime}` : '',
+                    paxCount: b.paxCount,
+                    meetingPoint: b.tour?.meetingPoint || '—',
+                    referenceNumber: b.referenceNumber,
+                    voucherUrl: b.voucherToken ? voucherUrl(b.voucherToken) : '',
+                },
+                { recipients: [b.leadGuestEmail] }
+            );
+            await prisma.booking.update({ where: { id: b.id }, data: { reminderSent: true } });
+        }
+        if (due.length) logger.info({ count: due.length }, 'departure reminders dispatched');
+    } catch (err) {
+        logger.error({ err }, 'departure reminder sweep failed');
+    }
+}
+
 export function startSchedulers() {
-    if (dailyJob || expiryJob || onboardingJob) return;
+    if (dailyJob || expiryJob || onboardingJob || reminderJob) return;
     if (!env.MAIL_ENABLED) {
         logger.info('mail disabled — schedulers will run but emails will be SKIPPED');
     }
@@ -130,6 +172,11 @@ export function startSchedulers() {
     onboardingJob = cron.schedule(
         '*/5 * * * *',
         runOnboardingSweep,
+        { timezone: env.ALERT_DAILY_REPORT_TIMEZONE }
+    );
+    reminderJob = cron.schedule(
+        '0 * * * *',
+        runDepartureReminderSweep,
         { timezone: env.ALERT_DAILY_REPORT_TIMEZONE }
     );
     logger.info(
@@ -150,5 +197,9 @@ export function stopSchedulers() {
     if (onboardingJob) {
         onboardingJob.stop();
         onboardingJob = undefined;
+    }
+    if (reminderJob) {
+        reminderJob.stop();
+        reminderJob = undefined;
     }
 }

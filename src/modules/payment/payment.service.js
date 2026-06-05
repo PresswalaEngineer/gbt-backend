@@ -61,13 +61,13 @@ export async function createCheckout(bookingId, customerId) {
     };
 }
 
-// Combined payment for a whole cart: ONE PaymentIntent covering N bookings,
-// charged in the customer's display currency (each booking FX-converted).
-export async function createCartCheckout(bookingIds, customerId, currency) {
-    const cur = String(currency || '').toUpperCase();
-    if (!/^[A-Z]{3}$/.test(cur)) {
-        throw ApiError.badRequest('A valid 3-letter currency is required', { code: 'INVALID_CURRENCY' });
-    }
+// Combined payment for a whole cart: ONE Checkout Session covering N bookings,
+// charged in the TOUR's own currency (the price the admin set on the tour — no
+// conversion to USD or to the display currency). `displayCurrency` is only the
+// browse currency the customer saw; we freeze the tourCurrency→displayCurrency
+// rate on each booking so a later FX change never alters the historical "shown"
+// value. Every booking in a single checkout must share one currency.
+export async function createCartCheckout(bookingIds, customerId, displayCurrency) {
     const ids = Array.from(new Set(bookingIds.map(Number))).filter(Boolean);
     if (!ids.length) throw ApiError.badRequest('No bookings to pay for', { code: 'NO_BOOKINGS' });
 
@@ -76,6 +76,18 @@ export async function createCartCheckout(bookingIds, customerId, currency) {
         include: { tour: { select: { name: true } } },
     });
     if (bookings.length !== ids.length) throw ApiError.notFound('Some bookings were not found');
+
+    // Charge currency = the bookings' own (tour) currency. A checkout cannot mix
+    // currencies (one Stripe session is single-currency) — surface it clearly.
+    const currencies = Array.from(new Set(bookings.map((b) => String(b.currency || '').toUpperCase())));
+    if (currencies.length !== 1 || !/^[A-Z]{3}$/.test(currencies[0])) {
+        throw ApiError.badRequest(
+            'All tours in one payment must use the same currency — please check out tours of the same currency together.',
+            { code: 'MIXED_CURRENCY_CART', details: { currencies } }
+        );
+    }
+    const cur = currencies[0];
+    const disp = String(displayCurrency || cur).toUpperCase();
 
     const now = new Date();
     const lineItems = [];
@@ -94,15 +106,8 @@ export async function createCartCheckout(bookingIds, customerId, currency) {
                 code: 'RESERVATION_EXPIRED',
             });
         }
-        let amt = Number(b.totalAmount);
-        if (b.currency && b.currency.toUpperCase() !== cur) {
-            const rate = await resolveRate({ from: b.currency, to: cur });
-            if (rate == null) {
-                throw ApiError.badRequest(`Cannot convert ${b.currency} to ${cur}`, { code: 'FX_UNAVAILABLE' });
-            }
-            amt = amt * rate;
-        }
-        amt = Number(amt.toFixed(2));
+        // Charge the tour-currency amount as-is. No FX at the charge level.
+        const amt = Number(Number(b.totalAmount).toFixed(2));
         total += amt;
         lineItems.push({
             quantity: 1,
@@ -114,6 +119,20 @@ export async function createCartCheckout(bookingIds, customerId, currency) {
         });
     }
     total = Number(total.toFixed(2));
+
+    // Frozen per-instance snapshot of the browse currency + tourCurrency→display
+    // rate (best-effort; never blocks the charge).
+    let displayRate = null;
+    if (disp !== cur) {
+        try {
+            const r = await resolveRate({ from: cur, to: disp });
+            if (r != null) displayRate = r;
+        } catch {
+            /* snapshot is best-effort */
+        }
+    } else {
+        displayRate = 1;
+    }
 
     const stripe = getStripe();
     const meta = { bookingIds: ids.join(','), customerId: String(customerId), currency: cur };
@@ -157,7 +176,13 @@ export async function createCartCheckout(bookingIds, customerId, currency) {
 
     await prisma.booking.updateMany({
         where: { id: { in: ids } },
-        data: { paymentSessionId: session.id, paymentCurrency: cur, paymentAmount: total },
+        data: {
+            paymentSessionId: session.id,
+            paymentCurrency: cur,
+            paymentAmount: total,
+            displayCurrency: disp,
+            displayRate,
+        },
     });
 
     return {
@@ -256,8 +281,8 @@ async function settleBooking(bookingId, intent) {
     // Sessions the PI only exists once payment completes.
     await prisma.booking.update({ where: { id: bookingId }, data: { paymentIntentId: intent.id } }).catch(() => {});
 
-    // Record each booking's payment in its OWN currency (Stripe charged the
-    // converted cart sum; per-booking ledger stays in the booking currency).
+    // Record each booking's payment in its own (tour) currency — the same
+    // currency Stripe charged, so the ledger matches the charge exactly.
     await recordPayment(bookingId, {
         amount: Number(booking.totalAmount),
         currency: booking.currency.toUpperCase(),

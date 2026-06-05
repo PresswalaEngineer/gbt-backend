@@ -670,6 +670,12 @@ model Booking {
   discountAmount   Decimal  @default(0) @db.Decimal(12, 2)
   totalAmount      Decimal  @db.Decimal(12, 2)
   refundAmount     Decimal? @db.Decimal(12, 2)
+  // Frozen snapshot of the display currency the customer browsed in + the FX
+  // rate (tourCurrency → displayCurrency) at the moment of checkout, so a later
+  // rate change never alters the historical "shown" value. The authoritative
+  // money is always `currency` + `totalAmount` (the tour's own currency).
+  displayCurrency  String?  @db.VarChar(3)
+  displayRate      Decimal? @db.Decimal(18, 8)
   usdAmount        Decimal? @db.Decimal(14, 2)
   fxRateToUsd      Decimal? @db.Decimal(18, 8)
 

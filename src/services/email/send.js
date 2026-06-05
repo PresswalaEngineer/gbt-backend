@@ -1,18 +1,26 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { prisma } from '../../config/db.js';
 import { logger } from '../../utils/logger.js';
-import { env } from '../../config/env.js';
 import { getTransport, getDefaultFrom } from './transport.js';
 
-// Prepend the official Global Bus Tours logo to every outgoing email. Uses a
-// hosted URL (email clients block base64), inserted just inside <body> so it
-// sits above the template's own header. Applies to all templates centrally.
-function withBrandLogo(html) {
-    if (!html || typeof html !== 'string') return html;
-    const logo =
-        `<div style="text-align:center;padding:18px 0 8px;background:#f8f9fb">` +
-        `<img src="${env.STOREFRONT_URL}/logo.png" alt="Global Bus Tours" style="height:38px;width:auto;display:inline-block"/>` +
-        `</div>`;
-    return /<body[^>]*>/i.test(html) ? html.replace(/(<body[^>]*>)/i, `$1${logo}`) : logo + html;
+// Official logo, embedded as a CID inline attachment. Email clients (Gmail etc.)
+// can't load localhost URLs and often strip base64 data-URIs, so the reliable
+// way to show the logo in the email body is a `cid:` reference backed by an
+// inline attachment.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const LOGO_CID = 'gbtlogo';
+let LOGO_BUFFER = null;
+try {
+    LOGO_BUFFER = readFileSync(join(__dirname, '../voucher/assets/logo.png'));
+} catch {
+    LOGO_BUFFER = null;
+}
+
+function logoAttachment() {
+    if (!LOGO_BUFFER) return null;
+    return { filename: 'logo.png', content: LOGO_BUFFER, contentType: 'image/png', cid: LOGO_CID };
 }
 
 export async function sendEmail({
@@ -28,7 +36,7 @@ export async function sendEmail({
     metadata = null,
     attachments = null,
 }) {
-    const html = withBrandLogo(bodyHtml);
+    const html = bodyHtml;
     const log = await prisma.emailLog.create({
         data: {
             alertType,
@@ -53,6 +61,8 @@ export async function sendEmail({
     }
 
     const from = getDefaultFrom({ overrideName: fromName, overrideEmail: fromEmail });
+    const logo = logoAttachment();
+    const allAttachments = [...(attachments || []), ...(logo ? [logo] : [])];
     try {
         const info = await transport.sendMail({
             from,
@@ -60,7 +70,7 @@ export async function sendEmail({
             subject,
             html,
             text: bodyText || undefined,
-            attachments: attachments && attachments.length ? attachments : undefined,
+            attachments: allAttachments.length ? allAttachments : undefined,
         });
         const updated = await prisma.emailLog.update({
             where: { id: log.id },

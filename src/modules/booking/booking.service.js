@@ -4,7 +4,6 @@ import { ApiError } from '../../utils/api-error.js';
 import { logger } from '../../utils/logger.js';
 import { applyCoupon, incrementUsage } from '../coupon/coupon.service.js';
 import { emitAlert } from '../alert/alert.service.js';
-import { resolveRate } from '../exchange-rate/exchange-rate.service.js';
 import { priceFor, generateReferenceNumber } from './booking.pricing.js';
 import { placeVendorBooking, cancelVendorBooking } from './booking.vendor.js';
 import { voucherUrl, loadVoucherById, buildPdfForBooking } from '../../services/voucher/index.js';
@@ -177,25 +176,11 @@ export async function createBooking(payload, { actorId } = {}) {
         couponCodeFinal = result.code;
     }
 
+    // The booking is calculated and settled entirely in the TOUR's own currency
+    // (pricing.currency). No conversion to a base/USD currency at this level —
+    // the display currency is a browse-only convenience handled on the storefront,
+    // and the per-instance FX snapshot is frozen at payment time (paymentService).
     const totalAmount = Number((pricing.gross - discountAmount).toFixed(2));
-
-    const baseCurrency = env.FX_BASE_CURRENCY;
-    let fxRateToUsd = null;
-    let usdAmount = null;
-    try {
-        const rate = await resolveRate({ from: pricing.currency, to: baseCurrency });
-        if (rate !== null) {
-            fxRateToUsd = rate;
-            usdAmount = Number((totalAmount * rate).toFixed(2));
-        } else {
-            logger.warn(
-                { from: pricing.currency, to: baseCurrency },
-                'no FX path to base currency — booking stored without usdAmount'
-            );
-        }
-    } catch (err) {
-        logger.warn({ err: err?.message }, 'FX conversion for booking failed (non-blocking)');
-    }
 
     const referenceNumber = await uniqueReference();
 
@@ -231,8 +216,6 @@ export async function createBooking(payload, { actorId } = {}) {
                 grossAmount: pricing.gross,
                 discountAmount,
                 totalAmount,
-                usdAmount,
-                fxRateToUsd,
                 couponId,
                 couponCode: couponCodeFinal,
                 externalSource: tour.apiType,

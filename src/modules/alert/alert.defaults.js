@@ -12,43 +12,181 @@ export const ALERT_TYPES = [
     'DEPARTURE_REMINDER',
 ];
 
-const baseHtml = (title, body) =>
-    `<!doctype html><html><body style="font-family:Arial,sans-serif;padding:24px;color:#202124;background:#f8f9fb">` +
-    `<table cellspacing="0" cellpadding="0" style="max-width:560px;margin:auto;background:#fff;border-radius:8px;overflow:hidden;border:1px solid #eaecef">` +
-    `<tr><td style="padding:20px 24px;border-bottom:1px solid #eaecef;background:#c8102e;color:#fff;font-weight:bold;font-size:16px">${title}</td></tr>` +
-    `<tr><td style="padding:24px;font-size:14px;line-height:1.6">${body}</td></tr>` +
-    `<tr><td style="padding:14px 24px;border-top:1px solid #eaecef;font-size:12px;color:#6b7280;background:#fafbfc">— Global Bus Tour</td></tr>` +
-    `</table></body></html>`;
+// ── Brand design tokens ──────────────────────────────────────────────────────
+const RED = '#c8102e';
+const RED2 = '#e63950';
+const INK = '#15181f';
+const BODY = '#3a4150';
+const MUTE = '#6b7280';
+
+// Real (non-AI) tour/bus hero photos, cropped to a 600×210 banner. Hosted on a
+// public CDN so they render in every email client.
+const HERO = {
+    bus: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=1200&h=420&q=80',
+    coach: 'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?auto=format&fit=crop&w=1200&h=420&q=80',
+    road: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=1200&h=420&q=80',
+};
+
+// Gradient CTA button.
+const button = (label, href) =>
+    `<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:26px auto 4px">` +
+    `<tr><td align="center" style="border-radius:11px;background:${RED};background:linear-gradient(135deg,${RED} 0%,${RED2} 100%);box-shadow:0 8px 18px rgba(200,16,46,.32)">` +
+    `<a href="${href}" target="_blank" style="display:inline-block;padding:15px 38px;color:#ffffff;font-weight:700;font-size:15px;text-decoration:none">${label} &rarr;</a>` +
+    `</td></tr></table>`;
+
+// Striped key/value detail card with an accent header. rows: [['Label','Value'], …]
+const infoCard = (rows, heading = 'Booking details') =>
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;border:1px solid #ececf1;border-radius:14px;overflow:hidden;box-shadow:0 2px 10px rgba(20,23,40,.05)">` +
+    `<tr><td colspan="2" style="padding:12px 16px;background:linear-gradient(135deg,${RED} 0%,${RED2} 100%);color:#fff;font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase">${heading}</td></tr>` +
+    rows
+        .map(
+            (r, i) =>
+                `<tr style="background:${i % 2 ? '#fafbfc' : '#ffffff'}">` +
+                `<td style="padding:12px 16px;color:${MUTE};font-size:12.5px;border-top:1px solid #f0f1f3">${r[0]}</td>` +
+                `<td style="padding:12px 16px;text-align:right;color:${INK};font-weight:700;font-size:13.5px;border-top:1px solid #f0f1f3">${r[1]}</td>` +
+                `</tr>`
+        )
+        .join('') +
+    `</table>`;
+
+// Immersive hero header: full-bleed image with a brand→ink gradient scrim, the
+// logo (white pill) + status badge floating on top, and the title/subtitle
+// overlaid at the bottom. Falls back to a solid ink bg in clients that drop
+// background images (Outlook).
+const heroHeader = (title, { hero, badge, badgeColor = '#16a34a', subtitle }) =>
+    `<tr><td background="${hero}" bgcolor="${INK}" valign="bottom" style="background-image:url('${hero}');background-size:cover;background-position:center center;background-color:${INK}">` +
+    // Heavier bottom scrim so the overlaid title always reads cleanly regardless
+    // of what's in the photo. Brand-red tint up top → near-solid ink at the base.
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(180deg, rgba(200,16,46,.40) 0%, rgba(21,24,31,.30) 34%, rgba(21,24,31,.78) 72%, rgba(21,24,31,.97) 100%)">` +
+    `<tr>` +
+    `<td valign="top" style="padding:22px 28px 0"><span style="display:inline-block;background:#ffffff;border-radius:10px;padding:8px 13px"><img src="cid:gbtlogo" alt="Global Bus Tours" height="28" style="height:28px;width:auto;display:block;border:0"/></span></td>` +
+    (badge
+        ? `<td align="right" valign="top" style="padding:26px 28px 0"><span style="display:inline-block;background:${badgeColor};color:#fff;font-size:10.5px;font-weight:700;letter-spacing:1.2px;padding:6px 13px;border-radius:999px">${badge}</span></td>`
+        : `<td></td>`) +
+    `</tr>` +
+    `<tr><td colspan="2" style="padding:104px 28px 26px"><h1 style="margin:0;color:#ffffff;font-size:27px;line-height:1.2;font-weight:800;text-shadow:0 2px 16px rgba(0,0,0,.75)">${title}</h1>` +
+    (subtitle ? `<p style="margin:10px 0 0;color:rgba(255,255,255,.92);font-size:14px;font-weight:500;text-shadow:0 1px 12px rgba(0,0,0,.8)">${subtitle}</p>` : '') +
+    `</td></tr>` +
+    `</table></td></tr>`;
+
+// Solid gradient header (for internal/admin alerts that don't need imagery).
+const plainHeader = (title) =>
+    `<tr><td align="center" style="background:${RED};background:linear-gradient(135deg,${RED} 0%,${RED2} 100%);padding:30px 28px 32px">` +
+    `<span style="display:inline-block;background:#ffffff;border-radius:11px;padding:10px 16px;margin-bottom:16px"><img src="cid:gbtlogo" alt="Global Bus Tours" height="34" style="height:34px;width:auto;display:block;border:0"/></span>` +
+    `<h1 style="margin:6px 0 0;color:#ffffff;font-size:22px;line-height:1.25;font-weight:800;text-shadow:0 1px 8px rgba(0,0,0,.2)">${title}</h1>` +
+    `</td></tr>`;
+
+// Branded email shell. The title lives in the header (overlaid on the hero when
+// `opts.hero` is set); the body is content only. opts: { hero, badge, badgeColor, subtitle }.
+const baseHtml = (title, body, opts = {}) =>
+    `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>` +
+    `<body style="margin:0;padding:0;background:#eceff5;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif">` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eceff5;padding:26px 12px"><tr><td align="center">` +
+    `<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 14px 40px rgba(20,23,40,.16)">` +
+    (opts.hero ? heroHeader(title, opts) : plainHeader(title)) +
+    `<tr><td style="padding:28px 34px 32px;font-size:15px;line-height:1.65;color:${BODY}">${body}</td></tr>` +
+    `<tr><td align="center" style="background:${INK};padding:26px 34px">` +
+    `<p style="margin:0 0 6px;color:#ffffff;font-weight:700;font-size:15px;letter-spacing:.4px">GLOBAL BUS TOURS</p>` +
+    `<p style="margin:0;color:#9aa1b0;font-size:12px;line-height:1.7">See the world, one stop at a time.<br/>Questions? Just reply to this email — we're happy to help.</p>` +
+    `</td></tr>` +
+    `</table>` +
+    `<p style="color:#9aa1b0;font-size:11px;margin:16px auto 0;max-width:560px">© Global Bus Tours · You're receiving this because of an account or booking with us.</p>` +
+    `</td></tr></table></body></html>`;
+
+const greet = (name) => `<p style="margin:0 0 14px">Hi <b>${name}</b>,</p>`;
+const note = (text) => `<p style="margin:14px 0 0;color:${MUTE};font-size:13px">${text}</p>`;
 
 export const DEFAULT_TEMPLATES = {
     BOOKING_CONFIRMATION: {
         name: 'Booking Confirmation',
         subject: 'Your booking is confirmed — {{referenceNumber}}',
         bodyHtml: baseHtml(
-            'Booking Confirmed 🎉',
-            `<p>Hi {{leadGuestName}},</p>` +
-                `<p>Great news — your booking is confirmed. Your e-voucher is attached to this email and can also be downloaded any time from the button below.</p>` +
-                `<table cellspacing="0" cellpadding="0" style="width:100%;margin:16px 0;border:1px solid #eaecef;border-radius:8px">` +
-                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px">Booking reference</td><td style="padding:8px 14px;text-align:right;font-weight:bold">{{referenceNumber}}</td></tr>` +
-                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px;border-top:1px solid #f0f1f3">Tour</td><td style="padding:8px 14px;text-align:right;border-top:1px solid #f0f1f3">{{tourName}}</td></tr>` +
-                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px;border-top:1px solid #f0f1f3">Travel date</td><td style="padding:8px 14px;text-align:right;border-top:1px solid #f0f1f3">{{travelDate}}{{startTime}}</td></tr>` +
-                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px;border-top:1px solid #f0f1f3">Travellers</td><td style="padding:8px 14px;text-align:right;border-top:1px solid #f0f1f3">{{paxCount}}</td></tr>` +
-                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px;border-top:1px solid #f0f1f3">Meeting point</td><td style="padding:8px 14px;text-align:right;border-top:1px solid #f0f1f3">{{meetingPoint}}</td></tr>` +
-                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px;border-top:1px solid #f0f1f3">Total paid</td><td style="padding:8px 14px;text-align:right;font-weight:bold;border-top:1px solid #f0f1f3">{{totalAmount}} {{currency}}</td></tr>` +
-                `</table>` +
-                `<p style="text-align:center;margin:22px 0"><a href="{{voucherUrl}}" style="background:#c8102e;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:bold;display:inline-block">Download your voucher</a></p>` +
-                `<p style="color:#6b7280;font-size:13px">Present the voucher (PDF or QR) at the meeting point. Have a wonderful trip!</p>`
+            'Your booking is confirmed 🎉',
+            greet('{{leadGuestName}}') +
+                `<p style="margin:0 0 4px">Great news — your booking is all set and your e‑voucher is attached to this email. Here's your trip at a glance:</p>` +
+                infoCard([
+                    ['Booking reference', '{{referenceNumber}}'],
+                    ['Tour', '{{tourName}}'],
+                    ['Travel date', '{{travelDate}}{{startTime}}'],
+                    ['Travellers', '{{paxCount}}'],
+                    ['Meeting point', '{{meetingPoint}}'],
+                    ['Total paid', '{{totalAmount}} {{currency}}'],
+                ]) +
+                button('Download your voucher', '{{voucherUrl}}') +
+                note('Present the voucher (PDF or QR) at the meeting point. Have a wonderful trip!'),
+            { hero: HERO.bus, badge: 'CONFIRMED', badgeColor: '#16a34a', subtitle: '{{tourName}}' }
         ),
         placeholders: ['leadGuestName', 'referenceNumber', 'tourName', 'travelDate', 'startTime', 'paxCount', 'meetingPoint', 'totalAmount', 'currency', 'voucherUrl'],
         description: 'Sent to the customer after a booking is confirmed (with the voucher PDF attached).',
+    },
+    DEPARTURE_REMINDER: {
+        name: 'Departure Reminder (24h)',
+        subject: 'Your tour is tomorrow — {{tourName}} ({{referenceNumber}})',
+        bodyHtml: baseHtml(
+            'See you soon 🚌',
+            greet('{{leadGuestName}}') +
+                `<p style="margin:0 0 4px">A friendly reminder that your tour departs in about <b>24 hours</b>. Everything you need is below:</p>` +
+                infoCard([
+                    ['Tour', '{{tourName}}'],
+                    ['Date', '{{travelDate}}{{startTime}}'],
+                    ['Travellers', '{{paxCount}}'],
+                    ['Meeting point', '{{meetingPoint}}'],
+                    ['Reference', '{{referenceNumber}}'],
+                ], 'Your trip') +
+                button('View your voucher', '{{voucherUrl}}') +
+                note('Please arrive 15 minutes early and bring your voucher (PDF or QR). Safe travels!'),
+            { hero: HERO.coach, badge: 'DEPARTS IN 24H', badgeColor: '#f59e0b', subtitle: '{{tourName}} · {{travelDate}}' }
+        ),
+        placeholders: ['leadGuestName', 'tourName', 'travelDate', 'startTime', 'paxCount', 'meetingPoint', 'referenceNumber', 'voucherUrl'],
+        description: 'Reminder email sent to the customer ~24 hours before their tour departs.',
+    },
+    WELCOME_ONBOARDING: {
+        name: 'Welcome / Onboarding',
+        subject: 'Welcome to Global Bus Tours, {{name}}! 🌍',
+        bodyHtml: baseHtml(
+            'Welcome aboard 🚌',
+            greet('{{name}}') +
+                `<p style="margin:0 0 10px">Thanks for creating your account — we're thrilled to have you. You're all set to discover unforgettable city tours, skip‑the‑line attractions and multi‑day adventures across the globe.</p>` +
+                `<p style="margin:0 0 6px;font-weight:700;color:${INK}">Here's what you can do:</p>` +
+                `<ul style="padding-left:18px;margin:8px 0 0">` +
+                `<li style="margin-bottom:7px">Save tours to your <b>wishlist</b> and pick up right where you left off</li>` +
+                `<li style="margin-bottom:7px">Reserve seats instantly with a live hold timer — pay when you're ready</li>` +
+                `<li style="margin-bottom:7px">Get instant e‑vouchers with a QR code for every booking</li>` +
+                `</ul>` +
+                button('Explore tours', '{{exploreUrl}}') +
+                note('Questions? Just reply to this email — our team is here to help. Happy travels!'),
+            { hero: HERO.road, badge: 'WELCOME', badgeColor: RED, subtitle: 'Your account is ready' }
+        ),
+        placeholders: ['name', 'email', 'exploreUrl'],
+        description: 'Welcome email sent to a customer a short while after they create their account (first signup).',
+    },
+    BOOKING_CANCELLED: {
+        name: 'Booking Cancelled',
+        subject: 'Your booking has been cancelled — {{referenceNumber}}',
+        bodyHtml: baseHtml(
+            'Your booking was cancelled',
+            greet('{{leadGuestName}}') +
+                `<p style="margin:0 0 4px">Your booking <b>{{referenceNumber}}</b> for <b>{{tourName}}</b> on <b>{{travelDate}}</b> has been cancelled.</p>` +
+                infoCard([['Refund amount', '{{refundAmount}} {{currency}}']], 'Refund') +
+                `<p style="margin:0">{{refundNote}}</p>` +
+                note('We hope to welcome you on another journey soon.'),
+            { hero: HERO.coach, badge: 'CANCELLED', badgeColor: '#6b7280', subtitle: '{{referenceNumber}}' }
+        ),
+        placeholders: ['leadGuestName', 'referenceNumber', 'tourName', 'travelDate', 'refundAmount', 'currency', 'refundNote'],
+        description: 'Sent to the customer when a booking is cancelled (with refund details).',
     },
     PAYMENT_FAILURE: {
         name: 'Payment Failure',
         subject: 'Payment failed for booking {{referenceNumber}}',
         bodyHtml: baseHtml(
-            'Payment Failed',
-            `<p>Booking <b>{{referenceNumber}}</b> for <b>{{leadGuestName}}</b> failed to capture payment.</p>` +
-                `<p><b>Reason:</b> {{reason}}</p><p><b>Amount:</b> {{amount}} {{currency}}</p>`
+            'Payment failed',
+            `<p style="margin:0 0 4px">A payment could not be captured for the booking below.</p>` +
+                infoCard([
+                    ['Reference', '{{referenceNumber}}'],
+                    ['Lead guest', '{{leadGuestName}}'],
+                    ['Reason', '{{reason}}'],
+                    ['Amount', '{{amount}} {{currency}}'],
+                ], 'Payment')
         ),
         placeholders: ['referenceNumber', 'leadGuestName', 'reason', 'amount', 'currency'],
         description: 'Admin alert when a booking payment fails.',
@@ -57,12 +195,14 @@ export const DEFAULT_TEMPLATES = {
         name: 'Daily Bookings Report',
         subject: 'Daily Bookings — {{date}}',
         bodyHtml: baseHtml(
-            'Daily Bookings Report',
-            `<p>Bookings for <b>{{date}}</b>:</p>` +
-                `<ul><li>Confirmed: <b>{{confirmedCount}}</b></li>` +
-                `<li>Cancelled: <b>{{cancelledCount}}</b></li>` +
-                `<li>Pending: <b>{{pendingCount}}</b></li>` +
-                `<li>Total revenue: <b>{{revenue}}</b></li></ul>`
+            'Daily bookings report',
+            `<p style="margin:0 0 4px">Summary for <b>{{date}}</b>:</p>` +
+                infoCard([
+                    ['Confirmed', '{{confirmedCount}}'],
+                    ['Cancelled', '{{cancelledCount}}'],
+                    ['Pending', '{{pendingCount}}'],
+                    ['Total revenue', '{{revenue}}'],
+                ], 'Summary')
         ),
         placeholders: ['date', 'confirmedCount', 'cancelledCount', 'pendingCount', 'revenue'],
         description: 'Daily summary email scheduled via cron.',
@@ -71,10 +211,10 @@ export const DEFAULT_TEMPLATES = {
         name: 'New Agent Signup',
         subject: 'New agent signup — {{name}}',
         bodyHtml: baseHtml(
-            'New Agent Signup',
-            `<p>A new agent has signed up:</p>` +
-                `<p><b>Name:</b> {{name}}<br/><b>Email:</b> {{email}}<br/><b>Company:</b> {{companyName}}</p>` +
-                `<p>Review and approve in the admin panel.</p>`
+            'New agent signup',
+            `<p style="margin:0 0 4px">A new agent has signed up and is awaiting review:</p>` +
+                infoCard([['Name', '{{name}}'], ['Email', '{{email}}'], ['Company', '{{companyName}}']], 'Agent') +
+                note('Review and approve them in the admin panel.')
         ),
         placeholders: ['name', 'email', 'companyName'],
         description: 'Admin alert when a new agent signs up.',
@@ -83,9 +223,9 @@ export const DEFAULT_TEMPLATES = {
         name: 'New Supplier Created',
         subject: 'New supplier added — {{name}}',
         bodyHtml: baseHtml(
-            'New Supplier',
-            `<p>A new supplier has been added to the system:</p>` +
-                `<p><b>Name:</b> {{name}}<br/><b>Country:</b> {{country}}<br/><b>Booking email:</b> {{bookingEmail}}</p>`
+            'New supplier added',
+            `<p style="margin:0 0 4px">A new supplier has been added to the system:</p>` +
+                infoCard([['Name', '{{name}}'], ['Country', '{{country}}'], ['Booking email', '{{bookingEmail}}']], 'Supplier')
         ),
         placeholders: ['name', 'country', 'bookingEmail'],
         description: 'Admin alert when a new supplier is created.',
@@ -94,9 +234,9 @@ export const DEFAULT_TEMPLATES = {
         name: 'New Coupon Created',
         subject: 'New coupon — {{code}}',
         bodyHtml: baseHtml(
-            'New Coupon',
-            `<p>A new coupon has been created:</p>` +
-                `<p><b>Code:</b> {{code}}<br/><b>Name:</b> {{name}}</p>`
+            'New coupon created',
+            `<p style="margin:0 0 4px">A new coupon is now live:</p>` +
+                infoCard([['Code', '{{code}}'], ['Name', '{{name}}']], 'Coupon')
         ),
         placeholders: ['code', 'name'],
         description: 'Admin alert when a new coupon is added.',
@@ -105,82 +245,30 @@ export const DEFAULT_TEMPLATES = {
         name: 'Coupon Expired',
         subject: 'Coupon expired — {{code}}',
         bodyHtml: baseHtml(
-            'Coupon Expired',
-            `<p>The coupon <b>{{code}}</b> ({{name}}) has expired on <b>{{endDate}}</b>.</p>`
+            'Coupon expired',
+            `<p style="margin:0 0 4px">A coupon has reached its end date:</p>` +
+                infoCard([['Code', '{{code}}'], ['Name', '{{name}}'], ['Expired on', '{{endDate}}']], 'Coupon')
         ),
         placeholders: ['code', 'name', 'endDate'],
         description: 'Admin alert when a coupon reaches its end date.',
-    },
-    BOOKING_CANCELLED: {
-        name: 'Booking Cancelled',
-        subject: 'Your booking has been cancelled — {{referenceNumber}}',
-        bodyHtml: baseHtml(
-            'Booking Cancelled',
-            `<p>Hi {{leadGuestName}},</p>` +
-                `<p>Your booking <b>{{referenceNumber}}</b> for <b>{{tourName}}</b> on <b>{{travelDate}}</b> has been cancelled.</p>` +
-                `<table cellspacing="0" cellpadding="0" style="width:100%;margin:14px 0;border:1px solid #eaecef;border-radius:8px">` +
-                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px">Refund amount</td><td style="padding:8px 14px;text-align:right;font-weight:bold">{{refundAmount}} {{currency}}</td></tr>` +
-                `</table>` +
-                `<p>{{refundNote}}</p>` +
-                `<p>We hope to welcome you on another journey soon.</p>`
-        ),
-        placeholders: ['leadGuestName', 'referenceNumber', 'tourName', 'travelDate', 'refundAmount', 'currency', 'refundNote'],
-        description: 'Sent to the customer when a booking is cancelled (with refund details).',
     },
     VENDOR_DISPATCH_FAILED: {
         name: 'Vendor Dispatch Failed',
         subject: 'ACTION NEEDED — supplier booking failed for {{referenceNumber}}',
         bodyHtml: baseHtml(
-            'Supplier Booking Failed',
-            `<p>Payment was captured but the supplier booking could not be confirmed automatically. This booking needs manual reconciliation.</p>` +
-                `<p><b>Reference:</b> {{referenceNumber}}<br/>` +
-                `<b>Tour:</b> {{tourName}}<br/>` +
-                `<b>Supplier:</b> {{provider}}<br/>` +
-                `<b>Lead guest:</b> {{leadGuestName}} ({{leadGuestEmail}})<br/>` +
-                `<b>Travel date:</b> {{travelDate}}<br/>` +
-                `<b>Status from vendor:</b> {{vendorStatus}}</p>` +
-                `<p>The booking is held as <b>paid, pending confirmation</b> and will be retried automatically. You can also confirm it manually from the admin booking screen.</p>`
+            'Supplier booking failed',
+            `<p style="margin:0 0 4px">Payment was captured but the supplier booking could not be confirmed automatically. This one needs manual reconciliation.</p>` +
+                infoCard([
+                    ['Reference', '{{referenceNumber}}'],
+                    ['Tour', '{{tourName}}'],
+                    ['Supplier', '{{provider}}'],
+                    ['Lead guest', '{{leadGuestName}} ({{leadGuestEmail}})'],
+                    ['Travel date', '{{travelDate}}'],
+                    ['Vendor status', '{{vendorStatus}}'],
+                ], 'Booking') +
+                note('The booking is held as paid, pending confirmation, and will be retried automatically. You can also confirm it manually from the admin booking screen.')
         ),
         placeholders: ['referenceNumber', 'tourName', 'provider', 'leadGuestName', 'leadGuestEmail', 'travelDate', 'vendorStatus'],
         description: 'Ops alert when a paid booking fails to dispatch to the supplier (TourCMS/Ventrata).',
-    },
-    WELCOME_ONBOARDING: {
-        name: 'Welcome / Onboarding',
-        subject: 'Welcome to Global Bus Tours, {{name}}! 🌍',
-        bodyHtml: baseHtml(
-            'Welcome aboard 🚌',
-            `<p>Hi {{name}},</p>` +
-                `<p>Thanks for creating your Global Bus Tours account — we're thrilled to have you. You're all set to discover unforgettable city tours, skip-the-line attractions and multi-day adventures across the globe.</p>` +
-                `<p>Here's how to get the most out of your account:</p>` +
-                `<ul style="padding-left:18px;margin:12px 0">` +
-                `<li style="margin-bottom:6px">💛 Save tours to your <b>wishlist</b> and come back to them any time</li>` +
-                `<li style="margin-bottom:6px">🛒 Reserve seats instantly with a live hold timer — pay when you're ready</li>` +
-                `<li style="margin-bottom:6px">🎫 Get instant e-vouchers with QR codes for every booking</li>` +
-                `</ul>` +
-                `<p style="text-align:center;margin:24px 0"><a href="{{exploreUrl}}" style="background:#c8102e;color:#fff;text-decoration:none;padding:12px 30px;border-radius:8px;font-weight:bold;display:inline-block">Explore tours</a></p>` +
-                `<p style="color:#6b7280;font-size:13px">Questions? Just reply to this email — our team is here to help. Happy travels!</p>`
-        ),
-        placeholders: ['name', 'email', 'exploreUrl'],
-        description: 'Welcome email sent to a customer a short while after they create their account (first signup).',
-    },
-    DEPARTURE_REMINDER: {
-        name: 'Departure Reminder (24h)',
-        subject: 'Your tour is tomorrow — {{tourName}} ({{referenceNumber}})',
-        bodyHtml: baseHtml(
-            'See you soon 🚌',
-            `<p>Hi {{leadGuestName}},</p>` +
-                `<p>Just a friendly reminder that your tour departs in about 24 hours. Here are your details:</p>` +
-                `<table cellspacing="0" cellpadding="0" style="width:100%;margin:16px 0;border:1px solid #eaecef;border-radius:8px">` +
-                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px">Tour</td><td style="padding:8px 14px;text-align:right;font-weight:bold">{{tourName}}</td></tr>` +
-                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px;border-top:1px solid #f0f1f3">Date</td><td style="padding:8px 14px;text-align:right;border-top:1px solid #f0f1f3">{{travelDate}}{{startTime}}</td></tr>` +
-                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px;border-top:1px solid #f0f1f3">Travellers</td><td style="padding:8px 14px;text-align:right;border-top:1px solid #f0f1f3">{{paxCount}}</td></tr>` +
-                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px;border-top:1px solid #f0f1f3">Meeting point</td><td style="padding:8px 14px;text-align:right;border-top:1px solid #f0f1f3">{{meetingPoint}}</td></tr>` +
-                `<tr><td style="padding:8px 14px;color:#6b7280;font-size:12px;border-top:1px solid #f0f1f3">Reference</td><td style="padding:8px 14px;text-align:right;font-weight:bold;border-top:1px solid #f0f1f3">{{referenceNumber}}</td></tr>` +
-                `</table>` +
-                `<p style="text-align:center;margin:22px 0"><a href="{{voucherUrl}}" style="background:#c8102e;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:bold;display:inline-block">View your voucher</a></p>` +
-                `<p style="color:#6b7280;font-size:13px">Please arrive 15 minutes early and bring your voucher (PDF or QR). Have a wonderful trip!</p>`
-        ),
-        placeholders: ['leadGuestName', 'tourName', 'travelDate', 'startTime', 'paxCount', 'meetingPoint', 'referenceNumber', 'voucherUrl'],
-        description: 'Reminder email sent to the customer ~24 hours before their tour departs.',
     },
 };

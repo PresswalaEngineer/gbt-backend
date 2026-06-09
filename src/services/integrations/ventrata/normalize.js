@@ -95,6 +95,130 @@ function joinList(value) {
     return list.map(asString).filter(Boolean).map((item) => `• ${item}`).join('\n');
 }
 
+const HTML_ENTITIES = {
+    amp: '&',
+    nbsp: ' ',
+    lt: '<',
+    gt: '>',
+    quot: '"',
+    apos: "'",
+    rsquo: '’',
+    lsquo: '‘',
+    ldquo: '“',
+    rdquo: '”',
+    ndash: '–',
+    mdash: '—',
+};
+
+function decodeEntities(text) {
+    return String(text).replace(/&(#x?[0-9a-fA-F]+|\w+);/g, (match, entity) => {
+        if (HTML_ENTITIES[entity] !== undefined) return HTML_ENTITIES[entity];
+        if (entity.startsWith('#')) {
+            const code = entity[1] === 'x' || entity[1] === 'X'
+                ? parseInt(entity.slice(2), 16)
+                : Number(entity.slice(1));
+            return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+        }
+        return match;
+    });
+}
+
+function htmlText(html) {
+    return decodeEntities(String(html || '').replace(/<[^>]+>/g, ' '))
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+// Ventrata's product `description` is rich HTML carrying the portal's
+// "Departure & Return", "What to Expect", "Additional Info" and
+// "Cancellation Policy" sections (headings come as <h1-4> or <button> labels).
+// Split on those markers so each section can land in its own tour field.
+function splitDescriptionSections(html) {
+    const source = String(html || '');
+    const headingRe = /<(h[1-4]|button)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+    const sections = [];
+    let current = { title: '', start: 0 };
+    let match;
+    while ((match = headingRe.exec(source))) {
+        sections.push({ title: current.title, html: source.slice(current.start, match.index) });
+        current = { title: htmlText(match[2]), start: match.index + match[0].length };
+    }
+    sections.push({ title: current.title, html: source.slice(current.start) });
+    return sections.filter((section) => section.title || htmlText(section.html));
+}
+
+function listItems(html) {
+    return [...String(html || '').matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)]
+        .map((m) => htmlText(m[1]))
+        .filter(Boolean);
+}
+
+function paragraphTexts(html) {
+    return [...String(html || '').matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)]
+        .map((m) => htmlText(m[1]))
+        .filter(Boolean);
+}
+
+function to24Hour(text) {
+    const m = String(text).match(/(\d{1,2})[:.](\d{2})\s*(AM|PM)?/i);
+    if (!m) return '';
+    let hours = Number(m[1]);
+    const meridiem = (m[3] || '').toUpperCase();
+    if (meridiem === 'PM' && hours < 12) hours += 12;
+    if (meridiem === 'AM' && hours === 12) hours = 0;
+    if (hours > 23) return '';
+    return `${String(hours).padStart(2, '0')}:${m[2]}`;
+}
+
+// "What to Expect" is a sequence of "Pass By:/Stop At: <place>" markers each
+// followed by a narrative paragraph — collapse each pair into one itinerary
+// line in the admin form's "Title — description" format.
+function extractItinerary(sectionHtml) {
+    const lines = [];
+    let pendingTitle = null;
+    for (const para of paragraphTexts(sectionHtml)) {
+        const marker = para.match(/^(Pass By|Stop At)\s*:?\s*(.+)$/i);
+        if (marker) {
+            if (pendingTitle) lines.push(pendingTitle);
+            pendingTitle = `${marker[1]}: ${marker[2].trim()}`;
+        } else if (pendingTitle) {
+            lines.push(`${pendingTitle} — ${para}`);
+            pendingTitle = null;
+        }
+    }
+    if (pendingTitle) lines.push(pendingTitle);
+    return lines.join('\n');
+}
+
+function extractStartTimes(product) {
+    const times = new Set();
+    const options = Array.isArray(product?.options) ? product.options : [];
+    for (const option of options) {
+        const list = Array.isArray(option?.availabilityLocalStartTimes)
+            ? option.availabilityLocalStartTimes
+            : [];
+        for (const time of list) {
+            const normalized = String(time).slice(0, 5);
+            if (/^\d{2}:\d{2}$/.test(normalized)) times.add(normalized);
+        }
+    }
+    return [...times].sort();
+}
+
+function freeCancellationHoursFrom(policyText, option) {
+    const text = String(policyText || '');
+    const hourMatch = text.match(/at least\s+(\d+)\s*hours?/i);
+    if (hourMatch) return Number(hourMatch[1]);
+    const dayMatch = text.match(/at least\s+(\d+)\s*days?/i);
+    if (dayMatch) return Number(dayMatch[1]) * 24;
+    const amount = asNumber(option?.cancellationCutoffAmount);
+    if (amount && amount > 0) {
+        const unit = String(option?.cancellationCutoffUnit || 'hour').toLowerCase();
+        return unit.startsWith('day') ? amount * 24 : amount;
+    }
+    return null;
+}
+
 export function normalizeProductsList(products = []) {
     const list = Array.isArray(products) ? products : [];
     return list.map((product) => ({
@@ -127,40 +251,97 @@ export function normalizeShowProduct(product) {
         sourceImages[0] ||
         '';
 
+    const firstOption = Array.isArray(product.options) ? product.options[0] : null;
+
+    // Break the rich description HTML into the portal's labelled sections.
+    const sections = splitDescriptionSections(product.description);
+    const findSection = (re) => sections.find((s) => re.test(s.title));
+    const departureSection = findSection(/departure/i);
+    const expectSection = findSection(/what to expect/i);
+    const additionalSection = findSection(/additional info/i);
+    const cancellationSection = findSection(/cancellation/i);
+    const introSection = sections.find((s) => !s.title && htmlText(s.html));
+
     const description =
-        asString(product.description) || asString(product.shortDescription);
+        asString(product.shortDescription) ||
+        (introSection ? htmlText(introSection.html) : '') ||
+        htmlText(product.description);
 
     const inclusions =
-        asString(product.inclusions) || joinList(product.included);
+        joinList(product.inclusions) || joinList(product.included);
     const exclusions =
-        asString(product.exclusions) || joinList(product.excluded);
+        joinList(product.exclusions) || joinList(product.excluded);
+
+    const itinerary = expectSection ? extractItinerary(expectSection.html) : '';
+
+    // Highlights: a dedicated field when populated, otherwise Ventrata mirrors
+    // marketplace highlights as FAQ entries with empty answers.
+    const faqs = Array.isArray(product.faqs) ? product.faqs : [];
+    const highlights =
+        joinList(product.highlights) ||
+        joinList(faqs.filter((f) => !asString(f?.answer)).map((f) => asString(f?.question)));
 
     const cancellationPolicy =
         asString(product.cancellationPolicy) ||
-        asString(product.cancellationCutoff) ||
+        (cancellationSection ? paragraphTexts(cancellationSection.html).join('\n') : '') ||
         '';
+    const freeCancellationHours = freeCancellationHoursFrom(cancellationPolicy, firstOption);
 
+    const additionalInfo = additionalSection
+        ? joinList(listItems(additionalSection.html))
+        : '';
     const importantNotes =
         asString(product.importantInformation) ||
         asString(product.requirements) ||
-        '';
+        additionalInfo;
 
     const voucherUsage =
         asString(product.redemptionInstructions) ||
         asString(product.deliveryInstructions) ||
+        asString(product.usageInstructions) ||
         '';
 
+    // Departure & Return bullets: address, departure time, return note.
+    const departureBullets = departureSection ? listItems(departureSection.html) : [];
+    const departureAddress = departureBullets.find((b) => !to24Hour(b) && !/return/i.test(b)) || '';
+    const departureTime = to24Hour(departureBullets.find((b) => to24Hour(b)) || '');
+    const returnNote = departureBullets.find((b) => /return/i.test(b)) || '';
+
     const meetingPointRaw =
+        asString(firstOption?.meetingPoint) ||
+        departureAddress ||
         asString(product.meetingPoint) ||
         asString(product.startLocation) ||
+        asString(product.address) ||
         asString(product.location) ||
         '';
     const endingPointRaw =
         asString(product.endingPoint) ||
         asString(product.endLocation) ||
+        returnNote ||
         meetingPointRaw;
 
-    const duration = asString(product.duration) || asString(product.durationLabel);
+    // Hotel pickup points become selectable meeting points when offered.
+    const pickupPoints = Array.isArray(firstOption?.pickupPoints) ? firstOption.pickupPoints : [];
+    const meetingPoints = firstOption?.pickupAvailable
+        ? pickupPoints
+              .map((point) => {
+                  const name = asString(point?.name);
+                  const address = asString(point?.address);
+                  if (!name) return '';
+                  return address && address !== name ? `${name} — ${address}` : name;
+              })
+              .filter(Boolean)
+              .slice(0, 50)
+        : [];
+
+    const startTimes = extractStartTimes(product);
+    const startTime = startTimes[0] || departureTime || '';
+
+    const duration =
+        asString(product.duration) ||
+        asString(product.durationLabel) ||
+        asString(firstOption?.duration);
 
     const options = normalizeOptions(product.options);
 
@@ -184,15 +365,20 @@ export function normalizeShowProduct(product) {
         name: asString(product.title) || asString(product.internalName),
         supplierName: asString(product.supplierName) || asString(product.vendor) || '',
         description,
+        highlights,
+        itinerary,
         inclusions,
         exclusions,
         cancellationPolicy,
+        freeCancellationHours,
         importantNotes,
         voucherUsage,
         meetingPoint: meetingPointRaw,
+        meetingPoints,
         endingPoint: endingPointRaw,
         duration,
-        startTime: '',
+        startTime,
+        startTimes,
         bookingWindow: asString(product.bookingCutoff) || '',
         minPax,
         maxPax,

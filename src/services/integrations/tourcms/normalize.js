@@ -167,13 +167,42 @@ function extractStartTimes(tour) {
 
 const AGECAT_TO_TIER = { a: 'ADULT', c: 'CHILD', i: 'INFANT', s: 'SENIOR' };
 
+// duration_desc carries the human duration ("6 Days", "Half day", "12 hours");
+// the numeric `duration` field is unreliable (multiday packages report 1).
+function detectTourType(tour) {
+    const desc = asString(tour?.duration_desc);
+    const dayMatch = desc.match(/(\d+)\s*-?\s*day/i);
+    const days = dayMatch ? Number(dayMatch[1]) : asNumber(tour?.duration);
+    if (days && days > 1) return { tourType: 'MULTI_DAY', durationDays: days };
+    return { tourType: 'SINGLE_DAY', durationDays: null };
+}
+
+// Multiday rates are occupancy-based ("Adult Double", "1 Pax (Single)") —
+// map by label keywords first, then age category.
+function multidayTierFor(rate) {
+    const label = `${asString(rate?.label_1)} ${asString(rate?.label_2)}`;
+    const agecat = String(rate?.agecat || '').toLowerCase();
+    if (agecat === 'c' || /child/i.test(label)) {
+        return /without\s*bed|no\s*bed/i.test(label) ? 'CHILD_WITHOUT_BED' : 'CHILD_WITH_BED';
+    }
+    if (agecat === 'i') return 'CHILD_WITHOUT_BED';
+    if (/triple|3\s*pax/i.test(label)) return 'PAX_3';
+    if (/double|twin|2\s*pax/i.test(label)) return 'PAX_2';
+    if (/single|1\s*pax|solo/i.test(label)) return 'PAX_1';
+    if (agecat === 'a' || agecat === 's') return 'PAX_1';
+    return null;
+}
+
 // new_booking.people_selection.rate[] carries per-tier from-prices —
 // far richer than the single tour-level from_price.
-function extractPriceTiers(tour) {
+function extractPriceTiers(tour, tourType) {
+    const multiday = tourType === 'MULTI_DAY';
     const rates = asArray(tour?.new_booking?.people_selection?.rate);
     const seen = new Map();
     for (const rate of rates) {
-        const tier = AGECAT_TO_TIER[String(rate?.agecat || '').toLowerCase()];
+        const tier = multiday
+            ? multidayTierFor(rate)
+            : AGECAT_TO_TIER[String(rate?.agecat || '').toLowerCase()];
         if (!tier || seen.has(tier)) continue;
         const grossPrice = parseMoney(rate?.from_price);
         if (grossPrice === null) continue;
@@ -184,7 +213,8 @@ function extractPriceTiers(tour) {
         parseMoney(tour?.from_price) ??
         parseMoney(tour?.from_price_display) ??
         parseMoney(tour?.adult_rate);
-    return fromPriceValue !== null ? [{ tier: 'ADULT', grossPrice: fromPriceValue }] : [];
+    if (fromPriceValue === null) return [];
+    return [{ tier: multiday ? 'PAX_1' : 'ADULT', grossPrice: fromPriceValue }];
 }
 
 export function normalizeShowTour(response) {
@@ -276,7 +306,8 @@ export function normalizeShowTour(response) {
         tour.from_price_currency,
         response?.currency
     );
-    const priceTiers = extractPriceTiers(tour);
+    const { tourType, durationDays } = detectTourType(tour);
+    const priceTiers = extractPriceTiers(tour, tourType);
 
     return {
         apiType: 'TOURCMS',
@@ -297,6 +328,8 @@ export function normalizeShowTour(response) {
         meetingPoint,
         endingPoint,
         duration: meaningful(tour.duration_desc) || asString(tour.duration) || asString(tour.length),
+        tourType,
+        durationDays,
         startTime,
         startTimes,
         bookingWindow,

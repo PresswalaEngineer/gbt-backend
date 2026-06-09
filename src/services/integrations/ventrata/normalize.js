@@ -36,13 +36,45 @@ function pickUnitTier(unit) {
     return null;
 }
 
-export function extractPriceTiers(product) {
+// Multiday products price per occupancy — map unit names/types onto the
+// multiday tier vocabulary.
+function pickMultidayUnitTier(unit) {
+    const label = `${String(unit?.internalName || '')} ${String(unit?.reference || '')}`;
+    const type = String(unit?.type || '').toUpperCase();
+    if (type === 'CHILD' || type === 'YOUTH' || type === 'STUDENT' || /child/i.test(label)) {
+        return /without\s*bed|no\s*bed/i.test(label) ? 'CHILD_WITHOUT_BED' : 'CHILD_WITH_BED';
+    }
+    if (type === 'INFANT') return 'CHILD_WITHOUT_BED';
+    if (/triple|3\s*pax/i.test(label)) return 'PAX_3';
+    if (/double|twin|2\s*pax/i.test(label)) return 'PAX_2';
+    if (/single|1\s*pax|solo/i.test(label)) return 'PAX_1';
+    if (type === 'ADULT' || type === 'SENIOR') return 'PAX_1';
+    return null;
+}
+
+// Single vs multiday from the option duration (e.g. "12 hours" vs 3 days).
+export function detectTourType(product) {
+    const option = Array.isArray(product?.options) ? product.options[0] : null;
+    const amount = asNumber(option?.durationAmount);
+    const unit = String(option?.durationUnit || '').toLowerCase();
+    if (unit.startsWith('day') && amount && amount > 1) {
+        return { tourType: 'MULTI_DAY', durationDays: Math.round(amount) };
+    }
+    const labelMatch = String(option?.duration || product?.duration || '').match(/(\d+)\s*-?\s*day/i);
+    if (labelMatch && Number(labelMatch[1]) > 1) {
+        return { tourType: 'MULTI_DAY', durationDays: Number(labelMatch[1]) };
+    }
+    return { tourType: 'SINGLE_DAY', durationDays: null };
+}
+
+export function extractPriceTiers(product, tourType) {
+    const multiday = tourType === 'MULTI_DAY';
     const options = Array.isArray(product?.options) ? product.options : [];
     const seen = new Map();
     for (const option of options) {
         const units = Array.isArray(option?.units) ? option.units : [];
         for (const unit of units) {
-            const tier = pickUnitTier(unit);
+            const tier = multiday ? pickMultidayUnitTier(unit) : pickUnitTier(unit);
             if (!tier || seen.has(tier)) continue;
             const fromBase = unit.pricingFrom?.[0]?.original ?? unit.pricingFrom?.[0]?.retail;
             const fromOption = option.pricingFrom?.[0]?.original ?? option.pricingFrom?.[0]?.retail;
@@ -343,6 +375,8 @@ export function normalizeShowProduct(product) {
         asString(product.durationLabel) ||
         asString(firstOption?.duration);
 
+    const { tourType, durationDays } = detectTourType(product);
+
     const options = normalizeOptions(product.options);
 
     const minPaxRaw = asNumber(
@@ -377,6 +411,8 @@ export function normalizeShowProduct(product) {
         meetingPoints,
         endingPoint: endingPointRaw,
         duration,
+        tourType,
+        durationDays,
         startTime,
         startTimes,
         bookingWindow: asString(product.bookingCutoff) || '',
@@ -389,6 +425,6 @@ export function normalizeShowProduct(product) {
         sourceThumbnail,
         options,
         currency: pickProductCurrency(product),
-        priceTiers: extractPriceTiers(product),
+        priceTiers: extractPriceTiers(product, tourType),
     };
 }

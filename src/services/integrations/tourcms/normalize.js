@@ -330,6 +330,11 @@ export function normalizeShowTour(response) {
         duration: meaningful(tour.duration_desc) || asString(tour.duration) || asString(tour.length),
         tourType,
         durationDays,
+        timeZone:
+            asString(tour.start_timezone) ||
+            asString(tour.account_timezone) ||
+            asString(tour.timezone) ||
+            null,
         startTime,
         startTimes,
         bookingWindow,

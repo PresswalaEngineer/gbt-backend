@@ -359,6 +359,7 @@ model Tour {
 
   tourType          TourType        @default(SINGLE_DAY)
   durationDays      Int?
+  timeZone          String?         @db.VarChar(64)
   pricingMode       TourPricingMode @default(NETT)
   marginPercent     Decimal?        @db.Decimal(6, 3)
   commissionPercent Decimal?        @db.Decimal(6, 3)

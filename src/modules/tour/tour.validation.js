@@ -193,6 +193,10 @@ const baseFields = {
         .transform((value) =>
             value === '' || value === null || value === undefined ? null : Number(value)
         ),
+    timeZone: z
+        .union([z.string().trim().max(64), z.literal(''), z.null()])
+        .optional()
+        .transform((value) => (value ? String(value) : null)),
     pricingMode: z.enum(['NETT', 'COMMISSIONABLE']).default('NETT'),
     marginPercent: optionalPercent,
     commissionPercent: optionalPercent,

@@ -67,7 +67,17 @@ export function detectTourType(product) {
     return { tourType: 'SINGLE_DAY', durationDays: null };
 }
 
-export function extractPriceTiers(product, tourType) {
+// Each pricingFrom is an array with one entry per available currency. Pick the
+// entry matching the product currency — NOT [0], which is whatever currency the
+// vendor listed first (usually USD) and would put USD numbers on a GBP tour.
+function pickPricingEntry(pricingFrom, currency) {
+    const list = Array.isArray(pricingFrom) ? pricingFrom : [];
+    if (!list.length) return null;
+    const cur = String(currency || '').toUpperCase();
+    return list.find((e) => String(e?.currency || '').toUpperCase() === cur) || list[0];
+}
+
+export function extractPriceTiers(product, tourType, currency) {
     const multiday = tourType === 'MULTI_DAY';
     const options = Array.isArray(product?.options) ? product.options : [];
     const seen = new Map();
@@ -76,15 +86,32 @@ export function extractPriceTiers(product, tourType) {
         for (const unit of units) {
             const tier = multiday ? pickMultidayUnitTier(unit) : pickUnitTier(unit);
             if (!tier || seen.has(tier)) continue;
-            const fromBase = unit.pricingFrom?.[0]?.original ?? unit.pricingFrom?.[0]?.retail;
-            const fromOption = option.pricingFrom?.[0]?.original ?? option.pricingFrom?.[0]?.retail;
-            const grossMinor = fromBase ?? fromOption;
-            const grossPrice = octoMoneyToMajor(grossMinor);
+            const entry =
+                pickPricingEntry(unit.pricingFrom, currency) ||
+                pickPricingEntry(option.pricingFrom, currency);
+            if (!entry) continue;
+            // OCTO pricing: retail = customer-facing gross, net = supplier nett,
+            // original = the slashed/"was" price (only when it exceeds gross).
+            const grossPrice = octoMoneyToMajor(entry.retail) ?? octoMoneyToMajor(entry.original);
             if (grossPrice === null) continue;
-            seen.set(tier, { tier, grossPrice });
+            const nettPrice = octoMoneyToMajor(entry.net);
+            const originalRaw = octoMoneyToMajor(entry.original);
+            const originalPrice = originalRaw != null && originalRaw > grossPrice ? originalRaw : null;
+            seen.set(tier, { tier, grossPrice, nettPrice, originalPrice });
         }
     }
     return Array.from(seen.values());
+}
+
+// When the vendor gives both gross (retail) and nett, the tour is commissionable
+// — surface the mode + commission % so the admin form prefills coherently.
+export function derivePricingMeta(tiers) {
+    const ref = (tiers || []).find(
+        (t) => t.nettPrice != null && t.grossPrice > 0 && t.nettPrice < t.grossPrice
+    );
+    if (!ref) return { pricingMode: null, commissionPercent: null };
+    const commission = ((ref.grossPrice - ref.nettPrice) / ref.grossPrice) * 100;
+    return { pricingMode: 'COMMISSIONABLE', commissionPercent: Math.round(commission * 100) / 100 };
 }
 
 export function pickProductCurrency(product) {
@@ -377,6 +404,11 @@ export function normalizeShowProduct(product) {
 
     const { tourType, durationDays } = detectTourType(product);
 
+    const currency = pickProductCurrency(product);
+    const priceTiers = extractPriceTiers(product, tourType, currency);
+    const { pricingMode, commissionPercent } = derivePricingMeta(priceTiers);
+    const timeZone = asString(product.timeZone) || null;
+
     const options = normalizeOptions(product.options);
 
     const minPaxRaw = asNumber(
@@ -413,6 +445,7 @@ export function normalizeShowProduct(product) {
         duration,
         tourType,
         durationDays,
+        timeZone,
         startTime,
         startTimes,
         bookingWindow: asString(product.bookingCutoff) || '',
@@ -424,7 +457,9 @@ export function normalizeShowProduct(product) {
         sourceImages,
         sourceThumbnail,
         options,
-        currency: pickProductCurrency(product),
-        priceTiers: extractPriceTiers(product, tourType),
+        currency,
+        pricingMode,
+        commissionPercent,
+        priceTiers,
     };
 }

@@ -163,10 +163,15 @@ export async function createCartCheckout(bookingIds, customerId, displayCurrency
     // mirrored onto the PaymentIntent so the existing settle path (which keys off
     // intent.metadata.bookingIds) works unchanged.
     const idempotencyKey = `cs_${[...ids].sort((a, b) => a - b).join('-')}_${toMinorUnits(total, cur)}${cur}`;
+    // customer_email is REQUIRED for elements-mode sessions — without it
+    // stripe.confirm() rejects ("An email address is required…") and the
+    // payment can never complete.
+    const leadEmail = bookings[0]?.leadGuestEmail || undefined;
     const session = await stripe.checkout.sessions.create(
         {
             ui_mode: 'elements',
             mode: 'payment',
+            customer_email: leadEmail,
             line_items: lineItems,
             metadata: meta,
             payment_intent_data: { metadata: meta },

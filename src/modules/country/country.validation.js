@@ -55,3 +55,7 @@ export const listCountrySchema = z.object({
 export const idParamSchema = z.object({
     id: z.coerce.number().int().positive(),
 });
+
+export const slugParamSchema = z.object({
+    slug: z.string().trim().min(1).max(120),
+});

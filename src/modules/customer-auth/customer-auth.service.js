@@ -127,6 +127,64 @@ export async function googleLogin({ credential }, meta) {
     };
 }
 
+// Verifies a Facebook user access token against the Graph API: the token must
+// belong to OUR app (debug_token) and yield a verified email. Mirrors googleLogin.
+export async function facebookLogin({ accessToken }, meta) {
+    if (!env.FACEBOOK_APP_ID || !env.FACEBOOK_APP_SECRET) {
+        throw ApiError.serviceUnavailable('Facebook sign-in is not configured', {
+            code: 'FACEBOOK_NOT_CONFIGURED',
+        });
+    }
+
+    const appToken = `${env.FACEBOOK_APP_ID}|${env.FACEBOOK_APP_SECRET}`;
+    let profile;
+    try {
+        const debugRes = await fetch(
+            `https://graph.facebook.com/debug_token?input_token=${encodeURIComponent(
+                accessToken
+            )}&access_token=${encodeURIComponent(appToken)}`
+        );
+        const debug = (await debugRes.json())?.data;
+        if (!debug?.is_valid || String(debug.app_id) !== String(env.FACEBOOK_APP_ID)) {
+            throw new Error('token rejected');
+        }
+        const profileRes = await fetch(
+            `https://graph.facebook.com/me?fields=id,name,email&access_token=${encodeURIComponent(
+                accessToken
+            )}`
+        );
+        profile = await profileRes.json();
+        if (profile?.error) throw new Error(profile.error.message);
+    } catch {
+        throw ApiError.unauthorized('Invalid Facebook credential');
+    }
+
+    if (!profile?.email) {
+        throw ApiError.badRequest('Your Facebook account has no email — please use another sign-in method', {
+            code: 'FACEBOOK_NO_EMAIL',
+        });
+    }
+
+    const email = String(profile.email).trim().toLowerCase();
+    const name = profile.name?.trim() || email.split('@')[0];
+
+    let customer = await prisma.customer.findUnique({ where: { email } });
+    if (!customer) {
+        customer = await prisma.customer.create({
+            data: { email, name, password: null, status: 'ACTIVE' },
+        });
+    }
+    if (customer.status !== 'ACTIVE') throw ApiError.forbidden('Account is inactive');
+
+    const tokens = buildTokens(customer);
+    await persistRefreshToken(tokens.refreshToken, customer.id, meta);
+
+    return {
+        ...tokens,
+        customer: await prisma.customer.findUnique({ where: { id: customer.id }, select: SAFE_FIELDS }),
+    };
+}
+
 export async function refresh(refreshToken, meta) {
     if (!refreshToken) throw ApiError.unauthorized('Refresh token missing');
 

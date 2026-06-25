@@ -1,3 +1,5 @@
+import { resolveCountry } from '../../../utils/countries.js';
+
 function asArray(value) {
     if (value === undefined || value === null || value === '') return [];
     return Array.isArray(value) ? value : [value];
@@ -167,6 +169,114 @@ function extractStartTimes(tour) {
 
 const AGECAT_TO_TIER = { a: 'ADULT', c: 'CHILD', i: 'INFANT', s: 'SENIOR' };
 
+// `exp` is TourCMS's "experience" field — newline- or <li>-separated selling
+// points. It's a far richer source of highlights than the single-line summary.
+function experienceHighlights(tour) {
+    const source = String(tour?.exp || '');
+    if (!source.trim()) return '';
+    if (/<li/i.test(source)) {
+        const list = htmlList(source);
+        if (list) return list;
+    }
+    const lines = decodeEntities(
+        source.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' ')
+    )
+        .split(/\r?\n/)
+        .map((line) => line.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+    return lines.length ? lines.map((line) => `• ${line}`).join('\n') : '';
+}
+
+// redemption_method (DIGITAL/PRINT) + delivery_formats (QR_CODE/PRINT) tell us
+// whether the voucher is mobile or printed.
+function deriveVoucherType(tour) {
+    const formats = asArray(tour?.delivery_formats?.delivery_format).map((f) =>
+        String(f).toUpperCase()
+    );
+    const blob = `${formats.join(' ')} ${String(tour?.redemption_method || '').toUpperCase()}`;
+    if (/PRINT|PAPER|PDF/.test(blob)) return 'PRINTED';
+    if (/QR|MOBILE|DIGITAL|VOUCHERLESS/.test(blob)) return 'MOBILE';
+    return null;
+}
+
+// Map TourCMS signals onto the admin's fixed product-tag enum
+// (MOBILE_VOUCHER, PRINTED_VOUCHER, WHEELCHAIR, AUDIO_GUIDE, LIVE_GUIDE,
+// MULTI_LANGUAGE). Only emit tags we can infer with confidence.
+function deriveProductTags(tour) {
+    const tags = new Set();
+    const voucher = deriveVoucherType(tour);
+    if (voucher === 'PRINTED') tags.add('PRINTED_VOUCHER');
+    else if (voucher === 'MOBILE') tags.add('MOBILE_VOUCHER');
+    if (asNumber(tour?.suitable_for_wheelchairs) === 1) tags.add('WHEELCHAIR');
+    const activeTokens = asArray(tour?.tour_tags?.tag)
+        .filter((tag) => asNumber(tag?.value) && asNumber(tag?.value) !== 0)
+        .map((tag) => String(tag?.token || '').toLowerCase());
+    if (activeTokens.some((token) => token.includes('audio'))) tags.add('AUDIO_GUIDE');
+    if (activeTokens.some((token) => /(^|-)(guided-tour|live-guide|private-tour)/.test(token)))
+        tags.add('LIVE_GUIDE');
+    const languages = asArray(
+        tour?.languages_spoken?.language ?? tour?.languages_spoken
+    ).filter(Boolean);
+    if (languages.length > 1) tags.add('MULTI_LANGUAGE');
+    return [...tags];
+}
+
+// geocode_start_point.geocode is "lat,long"; build a Google Maps link the admin
+// (and storefront) can open for the meeting point.
+function buildMapUrl(tour) {
+    const geo =
+        asString(tour?.geocode_start_point?.geocode) || asString(tour?.geocode_start);
+    if (!/^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(geo)) return '';
+    const placeId = asString(tour?.geocode_start_point?.google_place_id);
+    const base = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(geo)}`;
+    return placeId ? `${base}&query_place_id=${encodeURIComponent(placeId)}` : base;
+}
+
+// cutoff: { type: "before_start_sec", value: N } — how long before start a tour
+// stops being bookable. Convert to whole hours (0/none → null = last-minute OK).
+function bookingCutoffHoursFrom(tour) {
+    const cutoff = tour?.cutoff;
+    if (!cutoff || typeof cutoff !== 'object') return null;
+    const value = asNumber(cutoff.value);
+    if (!value || value <= 0) return null;
+    const type = String(cutoff.type || '').toLowerCase();
+    if (type.includes('day')) return Math.round(value * 24);
+    if (type.includes('hour')) return Math.round(value);
+    if (type.includes('min')) return Math.max(1, Math.round(value / 60));
+    return Math.max(1, Math.round(value / 3600)); // default: seconds
+}
+
+// last_bookable_date is the furthest date that can be booked; the gap from today
+// gives the "max advance booking" window (a snapshot the admin can adjust).
+function maxBookingDaysFrom(tour) {
+    const last = asString(tour?.last_bookable_date);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(last)) return null;
+    const lastMs = Date.parse(`${last}T00:00:00Z`);
+    if (!Number.isFinite(lastMs)) return null;
+    const days = Math.round((lastMs - Date.now()) / 86400000);
+    return days > 0 ? days : null;
+}
+
+// Each booking rate carries agerange_min/max per age category — use them to fill
+// the tour's child/infant age bounds (shown on the storefront tier picker).
+function extractAgeRanges(tour) {
+    const out = {};
+    for (const rate of asArray(tour?.new_booking?.people_selection?.rate)) {
+        const cat = String(rate?.agecat || '').toLowerCase();
+        const lo = asNumber(rate?.agerange_min);
+        const hi = asNumber(rate?.agerange_max);
+        if (lo === null || hi === null) continue;
+        if (cat === 'c') {
+            out.childAgeFrom = lo;
+            out.childAgeTo = hi;
+        } else if (cat === 'i') {
+            out.infantAgeFrom = lo;
+            out.infantAgeTo = hi;
+        }
+    }
+    return out;
+}
+
 // duration_desc carries the human duration ("6 Days", "Half day", "12 hours");
 // the numeric `duration` field is unreliable (multiday packages report 1).
 function detectTourType(tour) {
@@ -242,7 +352,8 @@ export function normalizeShowTour(response) {
 
     const summary = meaningful(tour.summary);
     const highlights =
-        summary && summary !== description ? `• ${summary}` : '';
+        experienceHighlights(tour) ||
+        (summary && summary !== description ? `• ${summary}` : '');
 
     const itinerary = htmlItinerary(tour.itinerary);
 
@@ -308,6 +419,21 @@ export function normalizeShowTour(response) {
     );
     const { tourType, durationDays } = detectTourType(tour);
     const priceTiers = extractPriceTiers(tour, tourType);
+    // TourCMS gives a flat city (`location`) + ISO country code (`country`).
+    const cityName = meaningful(tour.location) || meaningful(tour.start_location);
+    const countryCode = asString(tour.country).toUpperCase();
+    const resolvedCountry = resolveCountry(countryCode);
+    const voucherType = deriveVoucherType(tour);
+    const productTags = deriveProductTags(tour);
+    const mapUrl = buildMapUrl(tour);
+    const ageRanges = extractAgeRanges(tour);
+    // Active tour_tags (minus the "suitable-for-*" audience flags) are the best
+    // category signal — e.g. "museums", "day-trips", "boat-tours". The admin
+    // matches these against its own Category records.
+    const categoryHints = asArray(tour?.tour_tags?.tag)
+        .filter((tag) => asNumber(tag?.value) && asNumber(tag?.value) !== 0)
+        .map((tag) => String(tag?.token || '').toLowerCase())
+        .filter((token) => token && !token.startsWith('suitable-'));
 
     return {
         apiType: 'TOURCMS',
@@ -349,5 +475,16 @@ export function normalizeShowTour(response) {
         rawTourCode: asString(tour.tour_code),
         currency,
         priceTiers,
+        voucherType,
+        productTags,
+        mapUrl,
+        bookingCutoffHours: bookingCutoffHoursFrom(tour),
+        maxBookingDays: maxBookingDaysFrom(tour),
+        ...ageRanges,
+        city: cityName || null,
+        countryCode: /^[A-Z]{2}$/.test(countryCode) ? countryCode : null,
+        countryName: resolvedCountry?.name || null,
+        countryCurrency: resolvedCountry?.currency || null,
+        categoryHints,
     };
 }

@@ -1,5 +1,16 @@
 import { prisma } from '../../config/db.js';
 import { ApiError } from '../../utils/api-error.js';
+import { uniqueSlug } from '../../utils/slug.js';
+
+async function buildCountrySlug(name, excludeId) {
+    return uniqueSlug(name, async (slug) => {
+        const existing = await prisma.country.findFirst({
+            where: { slug },
+            select: { id: true },
+        });
+        return !!existing && existing.id !== excludeId;
+    });
+}
 
 export async function listCountries({ search, status, page, limit }) {
     const where = {
@@ -46,12 +57,33 @@ export async function getCountry(id) {
     return { ...rest, citiesCount: _count.cities };
 }
 
+export async function getCountryBySlug(slug) {
+    const country = await prisma.country.findUnique({
+        where: { slug },
+        include: { _count: { select: { cities: true } } },
+    });
+    if (!country) throw ApiError.notFound('Country not found');
+    const { _count, ...rest } = country;
+    return { ...rest, citiesCount: _count.cities };
+}
+
 export async function createCountry(payload) {
-    return prisma.country.create({ data: payload });
+    const slug = await buildCountrySlug(payload.slug || payload.name);
+    return prisma.country.create({ data: { ...payload, slug } });
 }
 
 export async function updateCountry(id, payload) {
-    return prisma.country.update({ where: { id }, data: payload });
+    const data = { ...payload };
+    if (payload.slug) {
+        data.slug = await buildCountrySlug(payload.slug, id);
+    } else if (payload.name) {
+        const current = await prisma.country.findUnique({
+            where: { id },
+            select: { slug: true },
+        });
+        if (!current?.slug) data.slug = await buildCountrySlug(payload.name, id);
+    }
+    return prisma.country.update({ where: { id }, data });
 }
 
 export async function deleteCountry(id) {

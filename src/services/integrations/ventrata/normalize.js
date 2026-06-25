@@ -1,7 +1,27 @@
+import { resolveCountry } from '../../../utils/countries.js';
+
 function asString(value) {
     if (value === undefined || value === null) return '';
     if (typeof value === 'object') return '';
     return String(value).trim();
+}
+
+// Ventrata exposes a structured destination ({ name, country: "GB" }); fall back
+// to the flat `location` string. Returns { city, countryCode, countryName,
+// countryCurrency } for the admin's "auto-select / offer to create" flow.
+function extractLocation(product) {
+    const dest = product?.destination && typeof product.destination === 'object'
+        ? product.destination
+        : null;
+    const city = asString(dest?.name) || asString(product?.location);
+    const countryCode = asString(dest?.country || product?.country).toUpperCase();
+    const resolved = resolveCountry(countryCode);
+    return {
+        city: city || null,
+        countryCode: /^[A-Z]{2}$/.test(countryCode) ? countryCode : null,
+        countryName: resolved?.name || null,
+        countryCurrency: resolved?.currency || null,
+    };
 }
 
 function asNumber(value) {
@@ -408,6 +428,20 @@ export function normalizeShowProduct(product) {
     const priceTiers = extractPriceTiers(product, tourType, currency);
     const { pricingMode, commissionPercent } = derivePricingMeta(priceTiers);
     const timeZone = asString(product.timeZone) || null;
+    const location = extractLocation(product);
+    // Ventrata's categories/tags (often empty in the sandbox) are the category
+    // signal — the admin matches them against its own Category records.
+    const categoryHints = [
+        ...(Array.isArray(product.categories) ? product.categories : []),
+        ...(Array.isArray(product.tags) ? product.tags : []),
+    ]
+        .map((entry) =>
+            typeof entry === 'string'
+                ? entry
+                : entry?.title || entry?.name || entry?.label || ''
+        )
+        .map((value) => String(value).toLowerCase().trim())
+        .filter(Boolean);
 
     const options = normalizeOptions(product.options);
 
@@ -461,5 +495,10 @@ export function normalizeShowProduct(product) {
         pricingMode,
         commissionPercent,
         priceTiers,
+        city: location.city,
+        countryCode: location.countryCode,
+        countryName: location.countryName,
+        countryCurrency: location.countryCurrency,
+        categoryHints,
     };
 }

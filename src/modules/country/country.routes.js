@@ -5,6 +5,7 @@ import { validate } from '../../middleware/validate.js';
 import {
     createCountrySchema,
     idParamSchema,
+    slugParamSchema,
     listCountrySchema,
     updateCountrySchema,
 } from './country.validation.js';
@@ -17,6 +18,13 @@ router.get(
     optionalAuth,
     validate({ query: listCountrySchema }),
     asyncHandler(countryController.list)
+);
+
+router.get(
+    '/slug/:slug',
+    optionalAuth,
+    validate({ params: slugParamSchema }),
+    asyncHandler(countryController.getBySlug)
 );
 
 router.get(

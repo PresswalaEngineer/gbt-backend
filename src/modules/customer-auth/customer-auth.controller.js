@@ -54,6 +54,15 @@ export async function google(req, res) {
     return success(res, { accessToken, customer }, { message: 'Logged in with Google' });
 }
 
+export async function facebook(req, res) {
+    const { accessToken, refreshToken, customer } = await customerAuthService.facebookLogin(
+        req.body,
+        getRequestMeta(req)
+    );
+    setRefreshCookie(res, refreshToken);
+    return success(res, { accessToken, customer }, { message: 'Logged in with Facebook' });
+}
+
 export async function refresh(req, res) {
     const refreshToken = req.cookies?.[REFRESH_COOKIE] ?? null;
     const result = await customerAuthService.refresh(refreshToken, getRequestMeta(req));

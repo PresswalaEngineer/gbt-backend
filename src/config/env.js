@@ -77,6 +77,9 @@ const envSchema = z
     GOOGLE_CLIENT_ID: z.preprocess(emptyToUndefined, z.string().optional()),
     GOOGLE_MAPS_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
 
+    FACEBOOK_APP_ID: z.preprocess(emptyToUndefined, z.string().optional()),
+    FACEBOOK_APP_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
+
     STORAGE_DRIVER: z.enum(['local', 'r2']).default('local'),
     UPLOAD_LOCAL_DIR: z.string().default('uploads'),
     UPLOAD_LOCAL_PUBLIC_PATH: z

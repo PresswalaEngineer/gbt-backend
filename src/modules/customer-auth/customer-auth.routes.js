@@ -3,7 +3,7 @@ import { asyncHandler } from '../../utils/async-handler.js';
 import { authLimiter } from '../../middleware/rate-limit.js';
 import { validate } from '../../middleware/validate.js';
 import { requireCustomer } from '../../middleware/auth.js';
-import { googleSchema, loginSchema, registerSchema, updateProfileSchema } from './customer-auth.validation.js';
+import { facebookSchema, googleSchema, loginSchema, registerSchema, updateProfileSchema } from './customer-auth.validation.js';
 import * as customerAuthController from './customer-auth.controller.js';
 
 const router = Router();
@@ -25,6 +25,12 @@ router.post(
     authLimiter,
     validate({ body: googleSchema }),
     asyncHandler(customerAuthController.google)
+);
+router.post(
+    '/facebook',
+    authLimiter,
+    validate({ body: facebookSchema }),
+    asyncHandler(customerAuthController.facebook)
 );
 router.post('/refresh', authLimiter, asyncHandler(customerAuthController.refresh));
 router.post('/logout', asyncHandler(customerAuthController.logout));

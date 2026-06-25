@@ -1,5 +1,16 @@
 import { prisma } from '../../config/db.js';
 import { ApiError } from '../../utils/api-error.js';
+import { uniqueSlug } from '../../utils/slug.js';
+
+async function buildCategorySlug(name, excludeId) {
+    return uniqueSlug(name, async (slug) => {
+        const existing = await prisma.category.findFirst({
+            where: { slug },
+            select: { id: true },
+        });
+        return !!existing && existing.id !== excludeId;
+    });
+}
 
 export async function listCategories({ search, status, page, limit }) {
     const where = {
@@ -39,11 +50,22 @@ export async function getCategory(id) {
 }
 
 export async function createCategory(payload) {
-    return prisma.category.create({ data: payload });
+    const slug = await buildCategorySlug(payload.slug || payload.name);
+    return prisma.category.create({ data: { ...payload, slug } });
 }
 
 export async function updateCategory(id, payload) {
-    return prisma.category.update({ where: { id }, data: payload });
+    const data = { ...payload };
+    if (payload.slug) {
+        data.slug = await buildCategorySlug(payload.slug, id);
+    } else if (payload.name) {
+        const current = await prisma.category.findUnique({
+            where: { id },
+            select: { slug: true },
+        });
+        if (!current?.slug) data.slug = await buildCategorySlug(payload.name, id);
+    }
+    return prisma.category.update({ where: { id }, data });
 }
 
 export async function deleteCategory(id) {

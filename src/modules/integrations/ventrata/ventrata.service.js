@@ -36,8 +36,14 @@ async function resolveSupplierKey(supplierId) {
 
 function matchesQuery(product, q) {
     if (!q) return true;
-    const needle = q.toLowerCase();
-    return [
+    // Split the query into individual words and require EVERY word to appear
+    // somewhere in the searchable text. This makes multi-word searches work
+    // regardless of word order or punctuation between them — e.g.
+    // "Loch Ness Highlands Whisky" matches "Loch Ness, Highlands and Whisky
+    // Distillery Day Tour" even though it isn't a contiguous substring.
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    const haystack = [
         product.name,
         product.internalName,
         product.reference,
@@ -45,7 +51,9 @@ function matchesQuery(product, q) {
         product.location,
     ]
         .filter(Boolean)
-        .some((field) => String(field).toLowerCase().includes(needle));
+        .map((field) => String(field).toLowerCase())
+        .join(' ');
+    return words.every((word) => haystack.includes(word));
 }
 
 export async function ping() {

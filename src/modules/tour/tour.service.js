@@ -1,5 +1,6 @@
 import { prisma } from '../../config/db.js';
 import { ApiError } from '../../utils/api-error.js';
+import { uniqueSlug } from '../../utils/slug.js';
 import { ensureTiersMatchTourType } from './tour.tier-rules.js';
 import { decrypt } from '../../utils/crypto.js';
 import { logger } from '../../utils/logger.js';
@@ -43,10 +44,10 @@ export async function checkVendorDate(tour, date, pax) {
 }
 
 const RELATIONS = {
-    country: { select: { id: true, name: true, code: true, currency: true } },
-    city: { select: { id: true, name: true, countryId: true } },
-    category: { select: { id: true, name: true } },
-    attraction: { select: { id: true, name: true, cityId: true } },
+    country: { select: { id: true, name: true, code: true, currency: true, slug: true } },
+    city: { select: { id: true, name: true, countryId: true, slug: true } },
+    category: { select: { id: true, name: true, slug: true } },
+    attraction: { select: { id: true, name: true, cityId: true, slug: true } },
     supplier: { select: { id: true, name: true, currency: true, paymentMode: true } },
     options: { orderBy: { id: 'asc' } },
     priceTiers: { orderBy: { id: 'asc' } },
@@ -303,6 +304,16 @@ export async function getMonthAvailability({ id, month }) {
     return { month, earliestDate, latestDate, active: tour.status === 'ACTIVE', unavailableDates };
 }
 
+async function buildTourSlug(name, excludeId) {
+    return uniqueSlug(name, async (slug) => {
+        const existing = await prisma.tour.findFirst({
+            where: { productSlug: slug },
+            select: { id: true },
+        });
+        return !!existing && existing.id !== excludeId;
+    });
+}
+
 export async function getTourBySlug(slug) {
     const tour = await prisma.tour.findUnique({
         where: { productSlug: slug },
@@ -335,9 +346,12 @@ export async function createTour(payload, { actorId } = {}) {
     await validateRefs(tourFields);
     ensureTiersMatchTourType(tourFields.tourType, priceTiers);
 
+    const productSlug = await buildTourSlug(tourFields.productSlug || tourFields.name);
+
     return prisma.tour.create({
         data: {
             ...tourFields,
+            productSlug,
             createdById: actorId ?? null,
             modifiedById: actorId ?? null,
             options: options?.length ? { create: options } : undefined,
@@ -376,6 +390,18 @@ export async function updateTour(id, payload, { actorId } = {}) {
         const supplierId =
             tourFields.supplierId !== undefined ? tourFields.supplierId : existing?.supplierId;
         ensureSupplierForManualTour(apiType, supplierId);
+    }
+
+    if (tourFields.productSlug) {
+        tourFields.productSlug = await buildTourSlug(tourFields.productSlug, id);
+    } else if (tourFields.name) {
+        const current = await prisma.tour.findUnique({
+            where: { id },
+            select: { productSlug: true },
+        });
+        if (!current?.productSlug) {
+            tourFields.productSlug = await buildTourSlug(tourFields.name, id);
+        }
     }
 
     return prisma.$transaction(async (tx) => {

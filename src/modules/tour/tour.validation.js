@@ -289,12 +289,23 @@ export const updateTourSchema = refineAgeAndPax(
         .strict()
 );
 
+// Accepts a single id (?cityId=5) OR a comma list (?cityId=5,6,7) and yields an
+// int array (or undefined). Backward-compatible with the old single-id callers.
+const idListParam = z.preprocess((value) => {
+    if (value == null || value === '') return undefined;
+    const arr = String(value)
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => Number.isInteger(n) && n > 0);
+    return arr.length ? arr : undefined;
+}, z.array(z.number().int().positive()).optional());
+
 export const listTourSchema = z.object({
     search: z.string().trim().optional(),
-    cityId: z.coerce.number().int().positive().optional(),
-    countryId: z.coerce.number().int().positive().optional(),
-    categoryId: z.coerce.number().int().positive().optional(),
-    attractionId: z.coerce.number().int().positive().optional(),
+    cityId: idListParam,
+    countryId: idListParam,
+    categoryId: idListParam,
+    attractionId: idListParam,
     tourType: z.enum(['SINGLE_DAY', 'MULTI_DAY']).optional(),
     apiType: z.enum(['NONE', 'TOURCMS', 'VENTRATA']).optional(),
     status: z.enum(['ACTIVE', 'INACTIVE']).optional(),

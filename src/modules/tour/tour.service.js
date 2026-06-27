@@ -97,14 +97,16 @@ function minGrossPrice(tour) {
 
 export async function listTours({ search, cityId, countryId, categoryId, attractionId, tourType, apiType, status, minPrice, maxPrice, sortBy, sortOrder, page, limit }) {
     const hasPriceFilter = minPrice != null || maxPrice != null;
+    // Each id filter may arrive as a single id or an array (multi-select).
+    const idFilter = (v) => (Array.isArray(v) ? { in: v } : v);
     const where = {
         ...(status ? { status } : {}),
         ...(tourType ? { tourType } : {}),
         ...(apiType ? { apiType } : {}),
-        ...(cityId ? { cityId } : {}),
-        ...(countryId ? { countryId } : {}),
-        ...(categoryId ? { categoryId } : {}),
-        ...(attractionId ? { attractionId } : {}),
+        ...(cityId ? { cityId: idFilter(cityId) } : {}),
+        ...(countryId ? { countryId: idFilter(countryId) } : {}),
+        ...(categoryId ? { categoryId: idFilter(categoryId) } : {}),
+        ...(attractionId ? { attractionId: idFilter(attractionId) } : {}),
         ...(hasPriceFilter
             ? {
                   priceTiers: {

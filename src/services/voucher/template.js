@@ -238,7 +238,6 @@ export function buildVoucherHtml(b, qrDataUrl = '') {
         ${infoCell('users', 'Passengers', paxSummary(b.paxBreakdown))}
         ${infoCell('ticket', 'Lead passenger', b.leadGuestName)}
         ${infoCell('ticket', 'Booking reference', b.referenceNumber)}
-        ${infoCell('card', 'Payment', payLabel)}
       </div>
       <div class="qrbox">
         ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR"/>` : ''}
@@ -274,13 +273,7 @@ export function buildVoucherHtml(b, qrDataUrl = '') {
         ${notes.map((n) => `<div>• ${esc(n)}</div>`).join('')}
         ${tour.cancellationPolicy ? `<div>• ${esc(String(tour.cancellationPolicy).slice(0, 110))}</div>` : ''}
         ${b.supplier?.name ? `<div>• Operated by ${esc(b.supplier.name)}${b.externalRef ? ` · supplier ref ${esc(b.externalRef)}` : ''}</div>` : ''}
-      </div>
-      <div class="totals">
-        <div class="row"><span>Base amount</span><span>${esc(money(b.grossAmount, b.currency))}</span></div>
-        ${Number(b.discountAmount) > 0 ? `<div class="row"><span>Discount${b.couponCode ? ` (${esc(b.couponCode)})` : ''}</span><span>− ${esc(money(b.discountAmount, b.currency))}</span></div>` : ''}
-        <div class="row"><span>Taxes &amp; fees</span><span>Included</span></div>
-        <div class="row total"><span>Total paid</span><span>${esc(money(b.totalAmount, b.currency))}</span></div>
-        <div class="prow">${esc(payLabel)}</div>
+        <div>• This is your travel voucher, not a payment receipt — your receipt is sent separately and is available under My Bookings.</div>
       </div>
     </div>
 

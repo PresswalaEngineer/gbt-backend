@@ -153,15 +153,22 @@ function parseCancellationPolicy(tour) {
 // type in tour_departure_structure.
 function extractStartTimes(tour) {
     const times = new Set();
-    const direct = asString(tour?.start_time ?? tour?.starts);
-    if (/^\d{1,2}:\d{2}/.test(direct)) times.add(direct.slice(0, 5).padStart(5, '0'));
+    const add = (v) => {
+        const s = asString(v);
+        if (/^\d{1,2}:\d{2}/.test(s)) times.add(s.slice(0, 5).padStart(5, '0'));
+    };
+    add(tour?.start_time ?? tour?.starts);
+    // Multi-slot tours list every bookable departure time in `times` (`times.time`
+    // after XML parse, scalar or array). This is the main source of multiple slots.
+    for (const t of asArray(tour?.times?.time ?? tour?.times)) {
+        add(typeof t === 'object' ? (t?.time ?? t?.start_time ?? t?.value) : t);
+    }
     const types = asArray(tour?.tour_departure_structure?.departure_types?.type);
     for (const type of types) {
         if (type?.active !== undefined && !Number(type.active)) continue;
         for (const field of asArray(type?.fields?.field)) {
             if (asString(field?.name) !== 'start_time') continue;
-            const value = asString(field?.value);
-            if (/^\d{1,2}:\d{2}$/.test(value)) times.add(value.padStart(5, '0'));
+            add(field?.value);
         }
     }
     return [...times].sort();
@@ -341,9 +348,14 @@ export function normalizeShowTour(response) {
         images[0] ||
         '';
 
-    // TourCMS content lives in shortdesc / longdesc / summary / itinerary /
-    // inc / ex — sandbox placeholders ("TBC") are filtered by meaningful().
+    // TourCMS content lives in tour_long_desc / tour_short_desc / tour_details /
+    // summary / itinerary / inc / ex — sandbox placeholders ("TBC") are filtered
+    // by meaningful(). (The real API keys are tour_long_desc etc.; the bare
+    // longdesc/shortdesc variants are kept only as defensive fallbacks.)
     const description =
+        meaningful(tour.tour_long_desc) ||
+        meaningful(tour.tour_short_desc) ||
+        meaningful(tour.tour_details) ||
         meaningful(tour.longdesc) ||
         meaningful(tour.shortdesc) ||
         meaningful(tour.description) ||
@@ -352,6 +364,7 @@ export function normalizeShowTour(response) {
 
     const summary = meaningful(tour.summary);
     const highlights =
+        htmlList(tour.highlights) ||
         experienceHighlights(tour) ||
         (summary && summary !== description ? `• ${summary}` : '');
 
@@ -361,6 +374,7 @@ export function normalizeShowTour(response) {
         htmlList(tour.inc) ||
         htmlList(tour.includes) ||
         htmlList(tour.inclusions) ||
+        htmlList(tour.what_is_included) ||
         joinList(tour.inclusions_list?.item);
 
     const exclusions =

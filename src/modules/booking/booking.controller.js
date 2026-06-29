@@ -7,6 +7,10 @@ import {
     buildPdfForBooking,
     voucherUrl,
 } from '../../services/voucher/index.js';
+import {
+    buildReceiptHtmlForBooking,
+    buildReceiptPdf,
+} from '../../services/receipt/index.js';
 import { ApiError } from '../../utils/api-error.js';
 import { env } from '../../config/env.js';
 
@@ -119,6 +123,35 @@ export async function voucherPdf(req, res) {
     const buf = Buffer.isBuffer(pdf) ? pdf : Buffer.from(pdf);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="voucher-${b.referenceNumber}.pdf"`);
+    res.setHeader('Content-Length', buf.length);
+    return res.end(buf);
+}
+
+// A payment receipt only exists once payment is actually captured.
+function ensureReceiptReady(booking) {
+    if (booking.paymentStatus !== 'PAID') {
+        throw ApiError.badRequest('Payment receipt is available once payment is complete.', { code: 'RECEIPT_NOT_READY' });
+    }
+}
+
+// Public payment-receipt HTML (token-gated, separate from the voucher).
+export async function receiptHtml(req, res) {
+    const b = await loadVoucherByToken(req.params.token);
+    ensureReceiptReady(b);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.removeHeader('X-Frame-Options');
+    res.setHeader('Content-Security-Policy', 'frame-ancestors *');
+    return res.send(buildReceiptHtmlForBooking(b));
+}
+
+// Public payment-receipt PDF (download + email attachment).
+export async function receiptPdf(req, res) {
+    const b = await loadVoucherByToken(req.params.token);
+    ensureReceiptReady(b);
+    const pdf = await buildReceiptPdf(b);
+    const buf = Buffer.isBuffer(pdf) ? pdf : Buffer.from(pdf);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="receipt-${b.referenceNumber}.pdf"`);
     res.setHeader('Content-Length', buf.length);
     return res.end(buf);
 }

@@ -316,7 +316,9 @@ async function sendBookingConfirmation(final) {
         voucherUrl: final.voucherToken ? voucherUrl(final.voucherToken) : '',
     };
 
-    // Only spin up Puppeteer when an email will actually be delivered.
+    // Only spin up Puppeteer when an email will actually be delivered. Attach the
+    // travel voucher, plus a SEPARATE payment receipt PDF once payment is captured
+    // (the voucher itself no longer carries any payment info).
     let attachments;
     if (env.MAIL_ENABLED && final.voucherToken) {
         try {
@@ -329,6 +331,14 @@ async function sendBookingConfirmation(final) {
                     contentType: 'application/pdf',
                 },
             ];
+            if (final.paymentStatus === 'PAID') {
+                const receiptPdf = await buildReceiptPdf(fullBooking);
+                attachments.push({
+                    filename: `receipt-${final.referenceNumber}.pdf`,
+                    content: Buffer.isBuffer(receiptPdf) ? receiptPdf : Buffer.from(receiptPdf),
+                    contentType: 'application/pdf',
+                });
+            }
         } catch {
             /* send without attachment */
         }

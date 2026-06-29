@@ -30,9 +30,11 @@ const quoteSchema = z
 // storefront cart alike.
 router.post('/quote', optionalAuth, validate({ body: quoteSchema }), asyncHandler(bookingController.quote));
 
-// --- Public voucher routes (token-based; precede everything) ---
+// --- Public voucher + payment-receipt routes (token-based; precede everything) ---
 router.get('/voucher/:token', asyncHandler(bookingController.voucherHtml));
 router.get('/voucher/:token/pdf', asyncHandler(bookingController.voucherPdf));
+router.get('/receipt/:token', asyncHandler(bookingController.receiptHtml));
+router.get('/receipt/:token/pdf', asyncHandler(bookingController.receiptPdf));
 
 // --- Customer (storefront) routes — must precede the staff `/:id` routes ---
 router.post(

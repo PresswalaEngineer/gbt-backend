@@ -414,7 +414,12 @@ export function normalizeShowProduct(product) {
               .slice(0, 50)
         : [];
 
-    const startTimes = extractStartTimes(product);
+    let startTimes = extractStartTimes(product);
+    // `availabilityLocalStartTimes` is often empty on Ventrata; fall back to the
+    // departure time parsed from the description so the array isn't left blank.
+    if (!startTimes.length && /^\d{1,2}:\d{2}/.test(String(departureTime || ''))) {
+        startTimes = [String(departureTime).slice(0, 5).padStart(5, '0')];
+    }
     const startTime = startTimes[0] || departureTime || '';
 
     const duration =

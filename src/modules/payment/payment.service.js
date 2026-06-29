@@ -77,17 +77,41 @@ export async function createCartCheckout(bookingIds, customerId, displayCurrency
     });
     if (bookings.length !== ids.length) throw ApiError.notFound('Some bookings were not found');
 
-    // Charge currency = the bookings' own (tour) currency. A checkout cannot mix
-    // currencies (one Stripe session is single-currency) — surface it clearly.
-    const currencies = Array.from(new Set(bookings.map((b) => String(b.currency || '').toUpperCase())));
-    if (currencies.length !== 1 || !/^[A-Z]{3}$/.test(currencies[0])) {
-        throw ApiError.badRequest(
-            'All tours in one payment must use the same currency — please check out tours of the same currency together.',
-            { code: 'MIXED_CURRENCY_CART', details: { currencies } }
-        );
+    // Charge currency = the customer's SELECTED display currency. Each booking's
+    // native (tour) price is FX-converted into it, so a multi-currency cart pays
+    // as one single-currency Stripe session in the currency the customer chose.
+    const disp = String(displayCurrency || '').toUpperCase();
+    if (!/^[A-Z]{3}$/.test(disp)) {
+        throw ApiError.badRequest('A valid display currency is required for checkout.', {
+            code: 'CURRENCY_REQUIRED',
+        });
     }
-    const cur = currencies[0];
-    const disp = String(displayCurrency || cur).toUpperCase();
+
+    // Pre-resolve an FX rate (native → display) for every currency in the cart.
+    // If any leg has no rate path, fail clearly rather than charge a wrong amount.
+    const bookingCurrencies = Array.from(
+        new Set(bookings.map((b) => String(b.currency || 'USD').toUpperCase()))
+    );
+    const rateCache = new Map();
+    for (const c of bookingCurrencies) {
+        if (c === disp) {
+            rateCache.set(c, 1);
+            continue;
+        }
+        let r = null;
+        try {
+            r = await resolveRate({ from: c, to: disp });
+        } catch {
+            r = null;
+        }
+        if (r == null) {
+            throw ApiError.badRequest(
+                `We can't convert ${c} to ${disp} right now. Please choose a different currency.`,
+                { code: 'FX_RATE_UNAVAILABLE', details: { from: c, to: disp } }
+            );
+        }
+        rateCache.set(c, r);
+    }
 
     const now = new Date();
     const lineItems = [];
@@ -106,36 +130,27 @@ export async function createCartCheckout(bookingIds, customerId, displayCurrency
                 code: 'RESERVATION_EXPIRED',
             });
         }
-        // Charge the tour-currency amount as-is. No FX at the charge level.
-        const amt = Number(Number(b.totalAmount).toFixed(2));
+        // Convert the booking's native total into the selected display currency.
+        const native = Number(Number(b.totalAmount).toFixed(2));
+        const rate = rateCache.get(String(b.currency || 'USD').toUpperCase()) ?? 1;
+        const amt = Number((native * rate).toFixed(2));
         total += amt;
         lineItems.push({
             quantity: 1,
             price_data: {
-                currency: cur.toLowerCase(),
-                unit_amount: toMinorUnits(amt, cur),
+                currency: disp.toLowerCase(),
+                unit_amount: toMinorUnits(amt, disp),
                 product_data: { name: b.tour?.name || `Booking ${b.referenceNumber}` },
             },
         });
     }
     total = Number(total.toFixed(2));
 
-    // Frozen per-instance snapshot of the browse currency + tourCurrency→display
-    // rate (best-effort; never blocks the charge).
-    let displayRate = null;
-    if (disp !== cur) {
-        try {
-            const r = await resolveRate({ from: cur, to: disp });
-            if (r != null) displayRate = r;
-        } catch {
-            /* snapshot is best-effort */
-        }
-    } else {
-        displayRate = 1;
-    }
+    // The charge is made directly in the display currency, so the stored rate is 1.
+    const displayRate = 1;
 
     const stripe = getStripe();
-    const meta = { bookingIds: ids.join(','), customerId: String(customerId), currency: cur };
+    const meta = { bookingIds: ids.join(','), customerId: String(customerId), currency: disp };
 
     // Duplicate-payment guard: reuse an already-open Checkout Session for the set.
     const sharedSession = bookings[0].paymentSessionId;
@@ -150,7 +165,7 @@ export async function createCartCheckout(bookingIds, customerId, displayCurrency
                     publishableKey: env.STRIPE_PUBLISHABLE_KEY ?? null,
                     sessionId: existing.id,
                     amount: total,
-                    currency: cur,
+                    currency: disp,
                     bookingIds: ids,
                 };
             }
@@ -162,7 +177,7 @@ export async function createCartCheckout(bookingIds, customerId, displayCurrency
     // Checkout Session in `elements` ui_mode (Stripe-recommended). Metadata is
     // mirrored onto the PaymentIntent so the existing settle path (which keys off
     // intent.metadata.bookingIds) works unchanged.
-    const idempotencyKey = `cs_${[...ids].sort((a, b) => a - b).join('-')}_${toMinorUnits(total, cur)}${cur}`;
+    const idempotencyKey = `cs_${[...ids].sort((a, b) => a - b).join('-')}_${toMinorUnits(total, disp)}${disp}`;
     // customer_email is REQUIRED for elements-mode sessions — without it
     // stripe.confirm() rejects ("An email address is required…") and the
     // payment can never complete.
@@ -183,7 +198,7 @@ export async function createCartCheckout(bookingIds, customerId, displayCurrency
         where: { id: { in: ids } },
         data: {
             paymentSessionId: session.id,
-            paymentCurrency: cur,
+            paymentCurrency: disp,
             paymentAmount: total,
             displayCurrency: disp,
             displayRate,
@@ -195,7 +210,7 @@ export async function createCartCheckout(bookingIds, customerId, displayCurrency
         publishableKey: env.STRIPE_PUBLISHABLE_KEY ?? null,
         sessionId: session.id,
         amount: total,
-        currency: cur,
+        currency: disp,
         bookingIds: ids,
     };
 }

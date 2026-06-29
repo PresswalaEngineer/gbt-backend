@@ -10,6 +10,7 @@ export const ALERT_TYPES = [
     'BOOKING_CANCELLED',
     'WELCOME_ONBOARDING',
     'DEPARTURE_REMINDER',
+    'SUPPLIER_BOOKING_NOTIFY',
 ];
 
 // ── Brand design tokens ──────────────────────────────────────────────────────
@@ -270,5 +271,26 @@ export const DEFAULT_TEMPLATES = {
         ),
         placeholders: ['referenceNumber', 'tourName', 'provider', 'leadGuestName', 'leadGuestEmail', 'travelDate', 'vendorStatus'],
         description: 'Ops alert when a paid booking fails to dispatch to the supplier (TourCMS/Ventrata).',
+    },
+    SUPPLIER_BOOKING_NOTIFY: {
+        name: 'Supplier Booking Notification',
+        subject: 'New booking {{referenceNumber}} — {{tourName}} on {{travelDate}}',
+        bodyHtml: baseHtml(
+            'You have a new booking',
+            `<p style="margin:0 0 4px">Hi {{supplierName}}, a new confirmed booking has been made for one of your tours. Please arrange to fulfil it.</p>` +
+                infoCard([
+                    ['Reference', '{{referenceNumber}}'],
+                    ['Tour', '{{tourName}}'],
+                    ['Travel date', '{{travelDate}}'],
+                    ['Start time', '{{startTime}}'],
+                    ['Passengers', '{{paxCount}}'],
+                    ['Lead guest', '{{leadGuestName}}'],
+                    ['Guest email', '{{leadGuestEmail}}'],
+                    ['Guest phone', '{{leadGuestPhone}}'],
+                ], 'Booking details') +
+                note('This booking was made and paid on Global Bus Tours. Please confirm availability and prepare for the guest on the travel date.')
+        ),
+        placeholders: ['supplierName', 'referenceNumber', 'tourName', 'travelDate', 'startTime', 'paxCount', 'leadGuestName', 'leadGuestEmail', 'leadGuestPhone'],
+        description: 'Sent to the supplier’s booking email when a manually-operated tour is booked.',
     },
 };

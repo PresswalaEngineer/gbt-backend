@@ -100,15 +100,27 @@ async function runOnboardingSweep() {
             select: { id: true, name: true, email: true },
             take: 50,
         });
+        let dispatched = 0;
         for (const c of fresh) {
-            await emitAlert(
+            // Guard the flag flip with a conditional update so the welcome email is
+            // sent exactly once per customer (first sign-in, any auth method) even
+            // across overlapping sweeps — and is NOT marked sent if the alert was
+            // skipped (mail disabled / alert toggled off), so it can retry later.
+            const logs = await emitAlert(
                 'WELCOME_ONBOARDING',
                 { name: c.name || 'traveller', email: c.email, exploreUrl: `${env.STOREFRONT_URL}/search` },
                 { recipients: [c.email] }
             );
-            await prisma.customer.update({ where: { id: c.id }, data: { welcomeEmailSent: true } });
+            const delivered = Array.isArray(logs) && logs.some((l) => l?.status === 'SENT' || l?.status === 'QUEUED');
+            if (delivered) {
+                await prisma.customer.updateMany({
+                    where: { id: c.id, welcomeEmailSent: false },
+                    data: { welcomeEmailSent: true },
+                });
+                dispatched += 1;
+            }
         }
-        if (fresh.length) logger.info({ count: fresh.length }, 'onboarding emails dispatched');
+        if (dispatched) logger.info({ count: dispatched }, 'onboarding emails dispatched');
     } catch (err) {
         logger.error({ err }, 'onboarding email sweep failed');
     }

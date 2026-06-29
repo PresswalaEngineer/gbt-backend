@@ -38,7 +38,7 @@ const RELATIONS = {
     },
     customer: { select: { id: true, name: true, email: true, phone: true } },
     agent: { select: { id: true, name: true, email: true, companyName: true } },
-    supplier: { select: { id: true, name: true, currency: true, paymentMode: true } },
+    supplier: { select: { id: true, name: true, currency: true, paymentMode: true, bookingEmail: true } },
     coupon: { select: { id: true, code: true, name: true, discountType: true } },
     payments: { orderBy: { createdAt: 'desc' } },
     events: { orderBy: { createdAt: 'desc' } },
@@ -66,6 +66,16 @@ async function uniqueReference() {
         if (!exists) return ref;
     }
     throw ApiError.internal('Failed to generate unique reference');
+}
+
+// A tour dispatches to a third-party vendor (TourCMS / Ventrata) ONLY when it is
+// both flagged with a vendor apiType AND actually linked to a vendor product
+// (apiId). Tours created manually in the admin have no apiId, so even if their
+// apiType drifted to a vendor value they must confirm locally — we must never
+// attempt a vendor reservation for them, because a failed dispatch on a PAID
+// booking triggers auto-cancel + refund (the manual-booking bug).
+function isVendorDispatchTour(tour) {
+    return !!tour && tour.apiType !== 'NONE' && !!String(tour.apiId || '').trim();
 }
 
 export async function listBookings({
@@ -184,8 +194,9 @@ export async function createBooking(payload, { actorId } = {}) {
 
     const referenceNumber = await uniqueReference();
 
+    const vendorDispatch = isVendorDispatchTour(tour);
     const initialStatus =
-        tour.apiType === 'NONE' && tour.instantConfirmation ? 'CONFIRMED' : 'PENDING';
+        !vendorDispatch && tour.instantConfirmation ? 'CONFIRMED' : 'PENDING';
     const holdExpiresAt =
         initialStatus === 'PENDING' ? new Date(Date.now() + HOLD_DURATION_MS) : null;
 
@@ -218,7 +229,7 @@ export async function createBooking(payload, { actorId } = {}) {
                 totalAmount,
                 couponId,
                 couponCode: couponCodeFinal,
-                externalSource: tour.apiType,
+                externalSource: vendorDispatch ? tour.apiType : 'NONE',
                 notes: payload.notes ?? null,
             },
             include: RELATIONS,
@@ -234,7 +245,9 @@ export async function createBooking(payload, { actorId } = {}) {
 
     // Vendor tours are NOT dispatched here. The booking is created PENDING and
     // only pushed to TourCMS/Ventrata when it is CONFIRMED (see confirmBooking).
-    if (tour.apiType !== 'NONE') {
+    // Only genuine vendor-linked tours get this note — a tour flagged with a
+    // vendor apiType but no apiId is operated manually (see isVendorDispatchTour).
+    if (vendorDispatch) {
         await prisma.bookingEvent.create({
             data: {
                 bookingId: booking.id,
@@ -254,10 +267,33 @@ export async function createBooking(payload, { actorId } = {}) {
 
 async function onConfirmed(final) {
     sendBookingConfirmation(final).catch(() => {});
+    sendSupplierBookingNotice(final).catch(() => {});
     await prisma.tour.update({
         where: { id: final.tourId },
         data: { bookingCount: { increment: 1 } },
     });
+}
+
+// For MANUALLY-operated tours (no third-party vendor to auto-dispatch to), email
+// the assigned supplier so they know to fulfil the booking. Vendor tours
+// (TourCMS / Ventrata) are reserved through their own API, so we skip those.
+// Best-effort; never blocks confirmation.
+async function sendSupplierBookingNotice(final) {
+    if (isVendorDispatchTour(final.tour)) return; // vendor handles its own notice
+    const supplierEmail = final.supplier?.bookingEmail?.trim();
+    if (!supplierEmail) return;
+    const payload = {
+        supplierName: final.supplier?.name || 'Supplier',
+        referenceNumber: final.referenceNumber,
+        tourName: final.tour?.name || 'Tour',
+        travelDate: final.travelDate.toISOString().slice(0, 10),
+        startTime: final.startTime || '—',
+        paxCount: final.paxCount,
+        leadGuestName: final.leadGuestName,
+        leadGuestEmail: final.leadGuestEmail,
+        leadGuestPhone: final.leadGuestPhone || '—',
+    };
+    await emitAlert('SUPPLIER_BOOKING_NOTIFY', payload, { recipients: [supplierEmail] });
 }
 
 // Booking-confirmation email with the voucher link + (when mail is enabled) the
@@ -332,7 +368,7 @@ export async function confirmBooking(id, { actorId } = {}) {
     }
 
     const tour = booking.tour;
-    if (tour.apiType !== 'NONE') {
+    if (isVendorDispatchTour(tour)) {
         const vendor = await placeVendorBooking({
             tour,
             supplier: tour.supplier,
